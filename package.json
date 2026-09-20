@@ -1,0 +1,28 @@
+{
+  "name": "local-wod",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "admin": "node server.mjs --admin",
+    "dev:client": "vite",
+    "sets:import": "python scripts/import_set_details.py",
+    "summons:import-skills": "python scripts/import_summon_skill.py",
+    "db:verify": "node scripts/verify-database.mjs",
+    "db:inspect": "node scripts/inspect-database-schema.mjs",
+    "test": "node --test --test-isolation=none \"tests/*.test.mjs\"",
+    "test:rules": "node --test --test-isolation=none tests/rules.test.mjs tests/formulas.test.mjs tests/effects.test.mjs tests/targeting.test.mjs tests/commands.test.mjs tests/engine.test.mjs tests/application.test.mjs tests/inventory.test.mjs tests/architecture.test.mjs tests/database-contract.test.mjs tests/report-import.test.mjs tests/character-instance.test.mjs tests/character-card.test.mjs",
+    "test:api": "node scripts/smoke-api.mjs",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test:sites": "node --test --test-isolation=none tests/sites-worker.test.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "vite": "6.4.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {}
+}

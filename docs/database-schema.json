@@ -1,0 +1,2213 @@
+{
+  "formatVersion": 1,
+  "databaseFormatVersion": 24,
+  "databaseName": "game.sqlite",
+  "description": "Local WOD runtime database schema contract; validates an existing database and cannot construct one.",
+  "tables": {
+    "attack_types": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "sort_order",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "battle_plans": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "position",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'front'"
+        },
+        {
+          "name": "initiative_skill_id",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "pre_round_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'[]'"
+        },
+        {
+          "name": "main_round_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'[]'"
+        },
+        {
+          "name": "mode",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'pve'"
+        },
+        {
+          "name": "floor_overrides_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        },
+        {
+          "name": "general_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "battle_runs": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "json_path",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        }
+      ]
+    },
+    "damage_types": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "sort_order",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "dungeon_runs": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "dungeon_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "dungeon_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "seed",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "ruleset_version",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "content_version",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "result",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "floor_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "battle_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "levels_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'[]'"
+        },
+        {
+          "name": "events_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'[]'"
+        },
+        {
+          "name": "effects_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'[]'"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'completed'"
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        },
+        {
+          "name": "rewards_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        },
+        {
+          "name": "party_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        }
+      ]
+    },
+    "dungeons": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "kind",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'normal'"
+        },
+        {
+          "name": "min_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "max_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "10"
+        },
+        {
+          "name": "prepare_minutes",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "''"
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "hero_action_settings": {
+      "description": "",
+      "columns": [
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "settings_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "hero_equipment": {
+      "description": "",
+      "columns": [
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "equip_slot",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "item_instance_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "item_instance_id"
+          ],
+          "referencesTable": "item_instances",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        },
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "hero_inventory": {
+      "description": "",
+      "columns": [
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "item_instance_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "is_equipped",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "equip_slot",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "acquired_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "hero_inventory_hero_idx",
+          "unique": false,
+          "columns": [
+            "hero_id",
+            "is_equipped"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "item_instance_id"
+          ],
+          "referencesTable": "item_instances",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        },
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "hero_skill_levels": {
+      "description": "",
+      "columns": [
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "source_skill_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "hero_skills": {
+      "description": "",
+      "columns": [
+        {
+          "name": "hero_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "skill_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "base_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "equipment_bonus",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "skill_id"
+          ],
+          "referencesTable": "skills",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        },
+        {
+          "columns": [
+            "hero_id"
+          ],
+          "referencesTable": "heroes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "heroes": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "profession_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "race_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "next_dungeon_at",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "experience",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "gold",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "fame",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "strength",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "constitution",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "intelligence",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "dexterity",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "charisma",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "agility",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "perception",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "willpower",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "user_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "gender",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'male'"
+        },
+        {
+          "name": "current_experience",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "total_experience",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "advanced_profession_name",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "deleted_at",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "heroes_user_id_idx",
+          "unique": false,
+          "columns": [
+            "user_id"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "referencesTable": "users",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        },
+        {
+          "columns": [
+            "race_id"
+          ],
+          "referencesTable": "races",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        },
+        {
+          "columns": [
+            "profession_id"
+          ],
+          "referencesTable": "professions",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        }
+      ]
+    },
+    "item_detail_metadata": {
+      "description": "",
+      "columns": [
+        {
+          "name": "item_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "json_path",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "parsed_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "item_id"
+          ],
+          "referencesTable": "items",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "item_instances": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "item_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "item_id"
+          ],
+          "referencesTable": "items",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        }
+      ]
+    },
+    "item_sets": {
+      "description": "",
+      "columns": [
+        {
+          "name": "set_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "piece_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "effect_json_path",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "items": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "slot",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "min_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "max_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "40"
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "items_name_idx",
+          "unique": false,
+          "columns": [
+            "name"
+          ]
+        }
+      ],
+      "foreignKeys": []
+    },
+    "profession_skills": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "profession_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_skill_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "skill_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "skill_type",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "learn_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "learn_type",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "training_class",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "advanced_profession_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "advanced_profession_name",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "profession_skills_owner_idx",
+          "unique": false,
+          "columns": [
+            "profession_id",
+            "learn_level"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "profession_id"
+          ],
+          "referencesTable": "professions",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "profession_starting_items": {
+      "description": "",
+      "columns": [
+        {
+          "name": "profession_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "item_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "quantity",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "equip_on_create",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "item_id"
+          ],
+          "referencesTable": "items",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        },
+        {
+          "columns": [
+            "profession_id"
+          ],
+          "referencesTable": "professions",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "professions": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "race_skills": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "race_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_skill_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "skill_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "skill_type",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "learn_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "learn_type",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "training_class",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "race_skills_owner_idx",
+          "unique": false,
+          "columns": [
+            "race_id",
+            "learn_level"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "race_id"
+          ],
+          "referencesTable": "races",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "races": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "schema_meta": {
+      "description": "",
+      "columns": [
+        {
+          "name": "key",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "value",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "sessions": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "expires_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "sessions_user_id_idx",
+          "unique": false,
+          "columns": [
+            "user_id"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "referencesTable": "users",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "skill_detail_metadata": {
+      "description": "",
+      "columns": [
+        {
+          "name": "scope",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "skill_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "skill_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "json_path",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "parsed_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "skill_detail_name_idx",
+          "unique": false,
+          "columns": [
+            "skill_name"
+          ]
+        }
+      ],
+      "foreignKeys": []
+    },
+    "skills": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "base_type",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "attack_type",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "primary_attr",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "secondary_attr",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "damage_primary_attr",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "damage_secondary_attr",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "summon_action_settings": {
+      "description": "Per-summon-definition battle action settings using the same JSON shape as hero_action_settings.",
+      "columns": [
+        {
+          "name": "summon_definition_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "settings_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "summon_definition_id"
+          ],
+          "referencesTable": "summon_definitions",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "summon_archetype_skills": {
+      "description": "Assignment of catalogued summon skills to summon archetypes, including unlock level and level expression.",
+      "columns": [
+        {
+          "name": "archetype_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "summon_skill_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "unlock_summon_skill_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "skill_level_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "sort_order",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "summon_archetype_skills_owner_idx",
+          "unique": false,
+          "columns": [
+            "archetype_id",
+            "unlock_summon_skill_level",
+            "sort_order"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "summon_skill_id"
+          ],
+          "referencesTable": "summon_skills",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        },
+        {
+          "columns": [
+            "archetype_id"
+          ],
+          "referencesTable": "summon_archetypes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "summon_archetypes": {
+      "description": "Stable identity shared by all tiers and level variants of the same summon.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "''"
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "summon_definitions": {
+      "description": "Summon recipes and level-range variants. summon_skill_id is a generated catalog ID such as skill-2094.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "archetype_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "summon_skill_id",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "recipe_type",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'direct'"
+        },
+        {
+          "name": "medium_item_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "summon_item_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "summon_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "tier",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "summon_level_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "min_summon_skill_level",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "max_summon_skill_level",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "default_position",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'rear'"
+        },
+        {
+          "name": "strength_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "constitution_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "intelligence_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "dexterity_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "charisma_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "agility_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "perception_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "willpower_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        },
+        {
+          "name": "metadata_json",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'{}'"
+        },
+        {
+          "name": "sort_order",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "actions_per_round_expr",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'1'"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "summon_definitions_archetype_idx",
+          "unique": false,
+          "columns": [
+            "archetype_id",
+            "tier",
+            "min_summon_skill_level"
+          ]
+        },
+        {
+          "name": "summon_definitions_name_idx",
+          "unique": false,
+          "columns": [
+            "summon_name"
+          ]
+        },
+        {
+          "name": "summon_definitions_recipe_idx",
+          "unique": false,
+          "columns": [
+            "summon_skill_id",
+            "medium_item_id",
+            "summon_item_id",
+            "min_summon_skill_level"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "summon_item_id"
+          ],
+          "referencesTable": "items",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        },
+        {
+          "columns": [
+            "medium_item_id"
+          ],
+          "referencesTable": "items",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        },
+        {
+          "columns": [
+            "archetype_id"
+          ],
+          "referencesTable": "summon_archetypes",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "summon_skills": {
+      "description": "Global summon skill metadata catalog; assignment to summons is stored in summon_archetype_skills.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "skill_id",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "source_skill_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "skill_name",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "skill_type",
+          "type": "TEXT",
+          "nullable": true,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "summon_skills_name_idx",
+          "unique": true,
+          "columns": [
+            "skill_name"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "skill_id"
+          ],
+          "referencesTable": "skills",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION"
+        }
+      ]
+    },
+    "team_inventory": {
+      "description": "",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "item_instance_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "stored_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "team_inventory_user_idx",
+          "unique": false,
+          "columns": [
+            "user_id"
+          ]
+        }
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "item_instance_id"
+          ],
+          "referencesTable": "item_instances",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "referencesTable": "users",
+          "referencesColumns": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE"
+        }
+      ]
+    },
+    "uniqueness_ledger": {
+      "description": "",
+      "columns": [
+        {
+          "name": "scope",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "owner_key",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 2,
+          "default": null
+        },
+        {
+          "name": "item_key",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 3,
+          "default": null
+        },
+        {
+          "name": "dropped_ever",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "1"
+        },
+        {
+          "name": "held",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "0"
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "users": {
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKeyPosition": 1,
+          "default": null
+        },
+        {
+          "name": "username",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "password_hash",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "password_salt",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    }
+  }
+}

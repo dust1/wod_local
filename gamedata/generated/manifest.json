@@ -1,0 +1,39 @@
+{
+ "contentVersion": "d2e5171612bb357b73191efaf22e3e3813545bad96190ec60251eefb01fcb987",
+ "generatedAt": "2026-09-15T06:51:35.999Z",
+ "rulesetVersion": "wod-textbook-v1",
+ "schemaVersion": "catalog-schema-v1",
+ "counts": {
+  "professions": 18,
+  "races": 11,
+  "skills": 1772,
+  "skillRelations": 2432,
+  "items": 48853,
+  "itemPagesParsed": 200,
+  "skillsWithWarnings": 1301,
+  "skillsClean": 471,
+  "skillWarnings": 2377,
+  "qualityChecks": 17,
+  "qualityIssues": 7671
+ },
+ "parserVersions": {
+  "skill": "skill-page-v1",
+  "item": "item-page-v1",
+  "schema": "catalog-schema-v1"
+ },
+ "warnings": [
+  "max-count-modifier-not-represented: 747",
+  "skill-level-bonus: 671",
+  "damage: 434",
+  "optional-flag-not-represented: 364",
+  "missing: 62",
+  "attack: 42",
+  "no-cached-html: 34",
+  "defense: 9",
+  "unrecognized-h2: 5",
+  "owner-passive: 4",
+  "not-found: 3",
+  "max-count-unrecognized: 2"
+ ],
+ "itemIndexNote": "items[].modifiers / items[].triggeredEffects are filled only for the parsed HTML sample (200 pages); null means \"not parsed\", never \"no modifiers\"."
+}

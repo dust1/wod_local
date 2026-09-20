@@ -1,0 +1,128 @@
+[
+ {
+  "id": "adventurer",
+  "sourceId": 2,
+  "name": "冒险者",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "mage-apprentice",
+  "sourceId": 3,
+  "name": "法师学徒",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "bard",
+  "sourceId": 4,
+  "name": "吟游诗人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "paladin",
+  "sourceId": 5,
+  "name": "圣武士",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "scholar",
+  "sourceId": 6,
+  "name": "学者",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "archer",
+  "sourceId": 7,
+  "name": "射手",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "juggler",
+  "sourceId": 8,
+  "name": "杂耍艺人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "necromancer",
+  "sourceId": 9,
+  "name": "死灵师",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "mage",
+  "sourceId": 10,
+  "name": "法师",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "drifter",
+  "sourceId": 11,
+  "name": "漂泊客",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "alchemist",
+  "sourceId": 12,
+  "name": "炼金术士",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "hunter",
+  "sourceId": 13,
+  "name": "猎人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "priest",
+  "sourceId": 14,
+  "name": "祭司",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "dancer",
+  "sourceId": 15,
+  "name": "舞者",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "shaman",
+  "sourceId": 16,
+  "name": "萨满",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "gladiator",
+  "sourceId": 17,
+  "name": "角斗士",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "barbarian",
+  "sourceId": 18,
+  "name": "野蛮人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "knight",
+  "sourceId": 19,
+  "name": "骑士",
+  "known": true,
+  "warnings": []
+ }
+]

@@ -1,0 +1,6 @@
+.openai/
+.workbuddy/
+data/
+dist/
+node_modules/
+docs/sets/

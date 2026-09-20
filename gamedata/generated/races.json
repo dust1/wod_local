@@ -1,0 +1,79 @@
+[
+ {
+  "id": "dinturan",
+  "sourceId": 2,
+  "name": "丁图安蛮族",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "hill-dwarf",
+  "sourceId": 3,
+  "name": "丘陵矮人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "gnome",
+  "sourceId": 4,
+  "name": "侏儒",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "halfling",
+  "sourceId": 5,
+  "name": "半身人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "kalashi",
+  "sourceId": 6,
+  "name": "卡拉希人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "lashani",
+  "sourceId": 7,
+  "name": "拉沙尼人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "tiren-elf",
+  "sourceId": 8,
+  "name": "提伦-埃精灵",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "woodlander",
+  "sourceId": 9,
+  "name": "林地人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "magmor-elf",
+  "sourceId": 10,
+  "name": "玛格-莫精灵",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "borderlander",
+  "sourceId": 11,
+  "name": "边塞人",
+  "known": true,
+  "warnings": []
+ },
+ {
+  "id": "mountain-dwarf",
+  "sourceId": 12,
+  "name": "高山矮人",
+  "known": true,
+  "warnings": []
+ }
+]

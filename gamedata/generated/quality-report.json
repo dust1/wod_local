@@ -1,0 +1,259 @@
+{
+ "generatedAt": "2026-09-15T06:51:35.999Z",
+ "checks": [
+  {
+   "check": "missing-reference",
+   "severity": "error",
+   "count": 1,
+   "samples": [
+    "skill_cache:观星：占星术:not-in-skill"
+   ]
+  },
+  {
+   "check": "same-name-different-id",
+   "severity": "error",
+   "count": 0,
+   "samples": []
+  },
+  {
+   "check": "same-id-different-name",
+   "severity": "error",
+   "count": 0,
+   "samples": []
+  },
+  {
+   "check": "advanced-profession-without-id",
+   "severity": "warning",
+   "count": 33,
+   "samples": [
+    "欺愚者(profession_skill#1481)",
+    "欺愚者(profession_skill#1488)",
+    "欺愚者(profession_skill#1496)",
+    "欺愚者(profession_skill#1497)",
+    "欺愚者(profession_skill#1498)",
+    "欺愚者(profession_skill#1499)",
+    "欺愚者(profession_skill#1500)",
+    "欺愚者(profession_skill#1512)",
+    "欺愚者(profession_skill#1513)",
+    "欺愚者(profession_skill#1521)",
+    "欺愚者(profession_skill#1522)",
+    "欺愚者(profession_skill#1523)",
+    "欺愚者(profession_skill#1524)",
+    "欺愚者(profession_skill#1525)",
+    "欺愚者(profession_skill#1526)",
+    "欺愚者(profession_skill#1530)",
+    "欺愚者(profession_skill#1533)",
+    "欺愚者(profession_skill#1534)",
+    "欺愚者(profession_skill#1535)",
+    "欺愚者(profession_skill#1536)"
+   ]
+  },
+  {
+   "check": "html-field-missing-or-changed",
+   "severity": "warning",
+   "count": 2377,
+   "samples": [
+    "七歌：武神荡魔曲:target:max-count-modifier-not-represented:\"4 +34%×英雄等级\"",
+    "七歌：贤者叙事曲:target:max-count-modifier-not-represented:\"4 +34%×英雄等级\"",
+    "七歌：风神戴冠曲:target:max-count-modifier-not-represented:\"4 +34%×英雄等级\"",
+    "仪式：入定:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"仪式：冥想 | +1 +25%×技能等级 | 无限制\"",
+    "仪式：入定:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"仪式：苦修 | +1 +25%×技能等级 | 无限制\"",
+    "仪式：冥想:item-requirement:optional-flag-not-represented:\"灵素 (可选)\"",
+    "仪式：凤凰的仪式:item-requirement:optional-flag-not-represented:\"火种 (可选)\"",
+    "仪式：大地之力:item-requirement:optional-flag-not-represented:\"大地圣物 (可选)\"",
+    "仪式：大符文法术:target:max-count-modifier-not-represented:\"1 +25%×英雄等级\"",
+    "仪式：心灵护盾:target:max-count-modifier-not-represented:\"17%×英雄等级\"",
+    "仪式：火之祝福:target:max-count-modifier-not-represented:\"2 +20%×英雄等级\"",
+    "仪式：苦修:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"基础：鞭击 | +1 +25%×技能等级\"",
+    "仪式：苦修:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"苦修：呼笃笞言 | +1 +75%×技能等级\"",
+    "仪式：野性狂暴:item-requirement:optional-flag-not-represented:\"大地圣物 (可选)\"",
+    "仪式：雷龙的仪式:item-requirement:optional-flag-not-represented:\"雷核 (可选)\"",
+    "传承：不死者之怒:target:max-count-modifier-not-represented:\"5 +20%\"",
+    "传承：亚空切割:target:max-count-modifier-not-represented:\"2 +3?\"",
+    "传承：元素风暴:target:max-count-modifier-not-represented:\"6 +20%×技能等级\"",
+    "传承：太初闪电:target:max-count-modifier-not-represented:\"20 +50%\"",
+    "传承：守望者的誓言:target:max-count-modifier-not-represented:\"2 +20%×技能等级\""
+   ]
+  },
+  {
+   "check": "item-requirement-cycle",
+   "severity": "error",
+   "count": 0,
+   "samples": [],
+   "note": "checked 200 item pages (bounded by --item-html-limit; the full 48k index is not parsed)"
+  },
+  {
+   "check": "unrecognized-modifier",
+   "severity": "warning",
+   "count": 1846,
+   "samples": [
+    "七歌：武神荡魔曲:target:max-count-modifier-not-represented:\"4 +34%×英雄等级\"",
+    "七歌：贤者叙事曲:target:max-count-modifier-not-represented:\"4 +34%×英雄等级\"",
+    "七歌：风神戴冠曲:target:max-count-modifier-not-represented:\"4 +34%×英雄等级\"",
+    "仪式：入定:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"仪式：冥想 | +1 +25%×技能等级 | 无限制\"",
+    "仪式：入定:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"仪式：苦修 | +1 +25%×技能等级 | 无限制\"",
+    "仪式：冥想:item-requirement:optional-flag-not-represented:\"灵素 (可选)\"",
+    "仪式：凤凰的仪式:item-requirement:optional-flag-not-represented:\"火种 (可选)\"",
+    "仪式：大地之力:item-requirement:optional-flag-not-represented:\"大地圣物 (可选)\"",
+    "仪式：大符文法术:target:max-count-modifier-not-represented:\"1 +25%×英雄等级\"",
+    "仪式：心灵护盾:target:max-count-modifier-not-represented:\"17%×英雄等级\"",
+    "仪式：火之祝福:target:max-count-modifier-not-represented:\"2 +20%×英雄等级\"",
+    "仪式：苦修:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"基础：鞭击 | +1 +25%×技能等级\"",
+    "仪式：苦修:skill-level-bonus:skill-level-bonus:multiple-modifiers:\"苦修：呼笃笞言 | +1 +75%×技能等级\"",
+    "仪式：野性狂暴:item-requirement:optional-flag-not-represented:\"大地圣物 (可选)\"",
+    "仪式：雷龙的仪式:item-requirement:optional-flag-not-represented:\"雷核 (可选)\"",
+    "传承：不死者之怒:target:max-count-modifier-not-represented:\"5 +20%\"",
+    "传承：亚空切割:target:max-count-modifier-not-represented:\"2 +3?\"",
+    "传承：元素风暴:target:max-count-modifier-not-represented:\"6 +20%×技能等级\"",
+    "传承：太初闪电:target:max-count-modifier-not-represented:\"20 +50%\"",
+    "传承：守望者的誓言:target:max-count-modifier-not-represented:\"2 +20%×技能等级\""
+   ]
+  },
+  {
+   "check": "reversed-level-range",
+   "severity": "warning",
+   "count": 1,
+   "samples": [
+    "圣枪，米尼亚特:127>40"
+   ]
+  },
+  {
+   "check": "unknown-equip-slot",
+   "severity": "warning",
+   "count": 0,
+   "samples": []
+  },
+  {
+   "check": "slot-alias-resolved",
+   "severity": "info",
+   "count": 3042,
+   "samples": [
+    "单手(泰迪熊)",
+    "单手(莉莉丹特制泰迪熊)",
+    "单手(麻薯盾)",
+    "单手(无火之焰)",
+    "单手(活化捕鼠器)",
+    "单手(滋滋作响的火焰提灯)",
+    "单手(考古学家的技巧)",
+    "单手(阳炎弩)",
+    "单手(不洁的头颅)",
+    "单手(灰之殇)",
+    "单手(跳舞木偶)",
+    "单手(腐肉)",
+    "单手(金纸扇)",
+    "单手(燃烧罪者的提灯)",
+    "单手(幽火烈炬)",
+    "单手(兽人萨满的头颅)",
+    "单手(长满触手的小音乐盒)",
+    "单手(悲观主义者之颅)",
+    "单手(罗玛卡夫的头骨)",
+    "单手(苦痛之烙)"
+   ],
+   "note": "item.slot 中的“单手”映射为派生部位 one_hand，“不可装备”映射为非装备物品"
+  },
+  {
+   "check": "skill-html-missing",
+   "severity": "warning",
+   "count": 34,
+   "samples": [
+    "skill:典型的边塞人！:no-cached-html",
+    "skill:技艺：书法（大师级）:no-cached-html",
+    "skill:技艺：制革（大师级）:no-cached-html",
+    "skill:技艺：制骨工艺（大师级）:no-cached-html",
+    "skill:技艺：刻印（大师级）:no-cached-html",
+    "skill:技艺：削制（大师级）:no-cached-html",
+    "skill:技艺：岩石切割（大师级）:no-cached-html",
+    "skill:技艺：皮革切割（大师级）:no-cached-html",
+    "skill:技艺：石匠（大师级）:no-cached-html",
+    "skill:技艺：精密打造:no-cached-html",
+    "skill:技艺：精密打造（大师级）:no-cached-html",
+    "skill:技艺：纹章学:no-cached-html",
+    "skill:技艺：编织（大师级）:no-cached-html",
+    "skill:技艺：雕琢（大师级）:no-cached-html",
+    "skill:远古召唤:no-cached-html",
+    "skill:远古智慧（攻击）:no-cached-html",
+    "skill:远古智慧（被动）:no-cached-html",
+    "skill:远古智慧（防御）:no-cached-html",
+    "skill:血脉：天命:no-cached-html",
+    "skill:血脉：文明之路:no-cached-html"
+   ]
+  },
+  {
+   "check": "item-html-missing",
+   "severity": "warning",
+   "count": 289,
+   "samples": [
+    "item:海德曼斯坦家族荣誉小勋章:no-cached-html",
+    "item:抄本残页(夜影蝎尾狮):no-cached-html",
+    "item:阿里士的军械库:no-cached-html",
+    "item:阿里士的蜘蛛网:no-cached-html",
+    "item:万毁之翼:no-cached-html",
+    "item:克尔廓塔:no-cached-html",
+    "item:扎德曼的毁灭新星:no-cached-html",
+    "item:训练大师的带领的衬衣:no-cached-html",
+    "item:训练大师的红白鸭舌帽:no-cached-html",
+    "item:训练大师的红色高帮鞋:no-cached-html",
+    "item:深渊倒影:no-cached-html",
+    "item:内芙妮的净慧之冠:no-cached-html",
+    "item:内芙妮的星河之翼:no-cached-html",
+    "item:内芙妮的晨辉护手:no-cached-html",
+    "item:内芙妮的龙舞之靴:no-cached-html",
+    "item:玛嘉烈的告死之爪:no-cached-html",
+    "item:玛嘉烈的灵械之躯:no-cached-html",
+    "item:玛嘉烈的绝地再起:no-cached-html",
+    "item:四十四次锻造的超凡抵抗力量板甲衫:no-cached-html",
+    "item:傻瓜式紧急战地伤害控制套装:no-cached-html"
+   ]
+  },
+  {
+   "check": "item-category-orphan",
+   "severity": "error",
+   "count": 0,
+   "samples": []
+  },
+  {
+   "check": "item-cache-orphan",
+   "severity": "error",
+   "count": 7,
+   "samples": [
+    "item_cache:Kanjal珍珠:not-in-item",
+    "item_cache:Kanjal珍珠碎片:not-in-item",
+    "item_cache:Kanjal珍珠精华:not-in-item",
+    "item_cache:___测试物品_newapi_xyz___:not-in-item",
+    "item_cache:___测试物品_进程内缓存_xyz___:not-in-item",
+    "item_cache:关于空白之眼的涂鸦:not-in-item",
+    "item_cache:沉没之骨:not-in-item"
+   ]
+  },
+  {
+   "check": "relation-dangling-skill",
+   "severity": "error",
+   "count": 0,
+   "samples": []
+  },
+  {
+   "check": "item-index-warning",
+   "severity": "warning",
+   "count": 8,
+   "samples": [
+    "法莎莉雅的冷酷热诚γ:effect-level:unrecognized:\"神性伤害\"",
+    "紫水晶之竞技场之王角斗士三叉戟:item-page:not-found",
+    "紫水晶之竞技场之王角斗士三叉戟:content-table:missing",
+    "''尼梅达·艾洛斯''毁灭的短弓:effect-level:unrecognized:\"穿刺伤害\"",
+    "圣枪，米尼亚特:level-range:reversed:127>40",
+    "灵铠召唤：弥斯喀啦恶咒之铠:requirements:unrecognized:\"英雄必须装备至少1件艾丽的引导之戒\"",
+    "璀璨金弦:effect-level:unrecognized:\"神圣伤害\"",
+    "璀璨金弦:slot:mismatch-with-page:\"戒指\""
+   ]
+  },
+  {
+   "check": "skill-relation-warning",
+   "severity": "warning",
+   "count": 33,
+   "samples": [
+    "skill-relation:advanced-profession-without-id:\"欺愚者\"",
+    "skill-relation:advanced-profession-without-id:\"守护者\""
+   ]
+  }
+ ]
+}

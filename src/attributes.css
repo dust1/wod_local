@@ -1,0 +1,200 @@
+.combat-grid .armor-block { grid-column: 1; grid-row: 1; }
+.combat-grid .damage-block { grid-column: 1; grid-row: 2; }
+.combat-block:nth-child(3) { grid-column: 2; grid-row: 2; }
+.combat-block:nth-child(4) { grid-column: 3; grid-row: 2; }
+.attribute-step-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #8e7b20;
+  outline: 1px solid #18140a;
+  background: #17150d;
+  color: #ffe000;
+  line-height: 17px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.attribute-step-button:hover:not(:disabled) { color: #fff; border-color: #d6bd34; }
+.attribute-step-button:disabled { color: #665f3d; border-color: #4d472d; cursor: default; }
+.attribute-base-value { min-width: 34px; text-align: center; }
+.attribute-training-error { margin: 0 0 9px; }
+/* 属性页的加点工具栏与技能页共用 .skill-training-toolbar 的排版，只是面板更窄。 */
+.attribute-training-panel .skill-training-toolbar { margin: 0 0 10px; }
+.attribute-training-panel > .equipment-reset { display: block; margin-top: 8px; }
+.skills-page { max-width: 980px; }
+.skill-experience { margin: -7px 0 12px; color: #d6cda9; }
+.skill-experience strong { color: var(--gold); }
+.skill-training-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -7px 0 12px; }
+.skill-training-toolbar .skill-experience { margin: 0; }
+.skill-training-toolbar .skill-experience span { color: #aaa28d; }
+.skill-training-toolbar .wod-button { flex: 0 0 auto; }
+@media (max-width: 680px) { .skill-training-toolbar { align-items: stretch; flex-direction: column; } }
+.skill-training-table { width: 100%; min-width: 760px; }
+.skill-training-table th { color: var(--gold); }
+.skill-training-table th:first-child,
+.skill-training-table td:first-child { width: 38px; text-align: right; color: #fff; }
+.skill-training-table td:nth-child(2) { color: var(--gold); }
+.skill-training-table td:nth-child(4) { text-align: center; color: #fff; }
+.skill-name { display: block; padding: 0; border: 0; background: transparent; font-weight: 800; text-align: left; cursor: pointer; }
+.skill-name:hover,.skill-name:focus-visible { color: #fff; text-decoration: underline; }
+.skill-talent { color: #ffc929; }
+.skill-basic { color: #ffd95a; }
+.skill-additional { color: #f0c95a; }
+.skill-special { color: #ffb36b; }
+.skill-origin { display: block; margin-top: 2px; color: #c7bfa8; font-size: 11px; font-weight: 600; }
+.skill-level-cell { display: grid; grid-template-columns: 20px 38px 20px; align-items: center; justify-content: center; gap: 5px; }
+.skill-level-cell strong { color: #fff; text-align: center; }
+.skill-cost { color: #ffe13b!important; text-align: right; white-space: nowrap; }
+.skill-live-level { text-align: center; white-space: nowrap; }
+.skill-boost-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 0 5px;
+  border: 1px solid #8a7a3a;
+  background: #4b3f16;
+  color: #ffe58a;
+  font-size: 11px;
+  font-weight: 800;
+}
+.derived-delta { font-size: 11px; font-style: normal; font-weight: 600; }
+.holder-effect-panel { margin-top: 26px; max-width: 920px; }
+.holder-effect-panel h3 { margin: 14px 0 6px; color: var(--gold); font-size: 13px; }
+.holder-effect-groups { display: grid; grid-template-columns: minmax(240px, 320px) minmax(420px, 1fr); gap: 18px; align-items: start; }
+.holder-effect-panel .source-effect-table { min-width: 0; width: 100%; }
+.holder-effect-panel .source-effect-table td:first-child { color: var(--gold); white-space: nowrap; }
+.holder-effect-panel .source-effect-table td:nth-child(4) { color: #64f05f; white-space: nowrap; }
+.holder-effect-panel .taxonomy-details ul { margin: 6px 0 0; padding-left: 20px; font-size: 12px; }
+.skill-locked { opacity: .58; }
+.skill-dialog-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 26px; background: rgba(0,0,0,.72); }
+.skill-dialog { width: min(1180px, calc(100vw - 52px)); max-height: calc(100vh - 52px); border: 2px ridge #71694d; background: rgba(8,9,6,.98) url('/assets/wod/css/skins/skin-4/images/page/page-background.jpg') center/cover fixed; box-shadow: 0 10px 35px #000; }
+.skill-dialog>header { display: flex; justify-content: space-between; align-items: center; padding: 8px 11px; background: #080808; border-bottom: 1px solid #746b4b; }
+.skill-dialog>header h2 { margin: 0; color: #fff; font-size: 18px; }
+.skill-dialog-close { width: 25px; height: 23px; border: 1px solid #8b2110; background: #8a7041 url('/assets/wod/css/skins/skin-4/images/btn/button2.png') center/500px 22px; color: #090909; font-size: 18px; line-height: 17px; cursor: pointer; }
+.skill-dialog-scroll { max-height: calc(100vh - 105px); overflow: auto; padding: 8px; }
+.delete-hero-dialog, .confirm-dialog { width: min(560px, calc(100vw - 52px)); }
+.delete-hero-dialog .skill-dialog-scroll, .confirm-dialog .skill-dialog-scroll { padding: 10px 12px; }
+.delete-hero-dialog p, .confirm-dialog p { margin: 7px 0; }
+.report-actions { display: flex; gap: 5px; }
+.skill-detail-overview { display: grid; grid-template-columns: minmax(0,4fr) minmax(270px,1fr); background: rgba(67,61,48,.94); border: 1px solid #17140e; }
+.skill-description { min-height: 245px; padding: 9px; border-right: 1px solid #17140e; }
+.skill-description h3 { margin: 0; color: var(--gold); font-size: 14px; }
+.skill-description hr { border: 0; border-top: 1px solid #d3d0c6; }
+.skill-requirements { display: grid; gap: 7px; margin: 28px 18px 0; }
+.skill-facts { margin: 0; padding: 8px; }
+.skill-facts div { display: grid; grid-template-columns: minmax(115px,1fr) minmax(110px,1.1fr); gap: 9px; padding: 3px 0; }
+.skill-facts dt { font-weight: 800; }
+.skill-facts dd { margin: 0; }
+.skill-note { margin: 0; padding: 7px 9px; background: rgba(67,61,48,.94); font-size: 12px; }
+.skill-dialog-scroll>h2 { margin: 17px 0 6px; font-size: 17px; }
+.skill-effect-block { margin: 9px 0 16px; }
+.skill-effect-block h3 { margin: 0 0 6px; font-size: 14px; color: #fff; }
+.skill-effect-block .wod-table { min-width: 0; width: auto; max-width: 100%; }
+.skill-effect-block td:not(:first-child) { color: #57f54f; }
+
+.inventory-page { max-width: 980px; }
+.inventory-table { min-width: 0; width: 100%; }
+.inventory-table td:nth-child(2) { color: #fff!important; }
+.inventory-table td:nth-child(3) { color: var(--gold)!important; white-space: nowrap; }
+.inventory-actions { display: flex; gap: 5px; white-space: nowrap; }
+.equipment-page { max-width: 980px; }
+.equipment-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; border-bottom: 1px solid #5b501e; padding-bottom: 8px; }
+.equipment-heading h1 { margin-bottom: 3px; }
+.equipment-heading p { margin: 0; color: #c8c0aa; font-size: 12px; }
+.equipment-dirty { min-width: 76px; padding: 3px 8px; border: 1px solid #535040; background: #24231d; color: #aaa48f; text-align: center; font-size: 11px; }
+.equipment-dirty.is-dirty { border-color: #a78319; color: #ffe169; box-shadow: inset 0 0 7px rgba(252,204,0,.14); }
+.equipment-note { margin: 10px 0 16px; color: #d4cba9; font-size: 12px; }
+.equipment-board { display: grid; grid-template-columns: repeat(2,minmax(290px,1fr)); gap: 8px 34px; align-items: start; padding: 13px 14px; border: 1px solid #50491e; background: rgba(12,13,9,.72); box-shadow: inset 0 0 24px #050604; }
+.equipment-column { display: grid; gap: 5px; }
+.equipment-slot { display: grid; grid-template-columns: 58px 27px minmax(150px,1fr) 17px; gap: 5px; align-items: center; min-width: 0; }
+.equipment-slot-label { color: #fff; text-align: right; white-space: nowrap; text-shadow: 1px 1px #000; }
+.equipment-slot.is-empty { grid-template-columns: 76px 1fr; min-height: 25px; }
+.equipment-slot.is-empty .equipment-slot-label { color: #aaa48f; }
+.equipment-empty-text { min-height: 1px; }
+.equipment-ready { color: #43ff21; font-size: 10px; text-shadow: 0 0 4px #0a0; overflow: hidden; white-space: nowrap; }
+.equipment-slot select { width: 100%; min-width: 0; height: 25px; padding: 2px 25px 2px 6px; border: 1px solid #a29462; border-radius: 0; background: #585344; color: #fff; box-shadow: inset 1px 1px 1px #29261f; }
+.equipment-slot select:focus { outline: 1px solid #f6ce36; border-color: #f6ce36; }
+.equipment-info { width: 12px; height: 13px; object-fit: contain; cursor: help; }
+.equipment-actions { display: flex; align-items: center; gap: 12px; margin-top: 13px; }
+.equipment-actions .wod-button { min-width: 100px; }
+.equipment-reset { border: 0; background: transparent; color: var(--gold); padding: 3px 0; cursor: pointer; font-size: 12px; }
+.equipment-reset:disabled { color: #77715e; cursor: default; }
+.item-detail-intro { min-height: 115px; padding: 8px 3px 14px; }
+.item-detail-intro h1 { margin: 0 0 14px; color: var(--gold); font-size: 20px; }
+.item-detail-intro p { max-width: 760px; margin: 0; line-height: 1.55; white-space: pre-line; }
+.item-detail-section h2 { margin: 4px 0 6px; font-size: 17px; }
+.item-facts-table { width: min(760px,100%); min-width: 0; }
+.item-facts-table th { width: 245px; padding: 5px 9px; color: #e6dec7; text-align: left; vertical-align: top; }
+.item-facts-table td { padding: 5px 12px; color: #fff; text-align: center; white-space: pre-line; }
+.item-fact-lines { display: grid; gap: 3px; justify-items: center; }
+.item-fact-lines > span { display: block; }
+.item-condition-met { color: #fff; }
+.item-condition-unmet { color: #ff9603; font-weight: 700; }
+.item-facts-table tr:nth-child(odd) { background: rgba(84,76,58,.56); }
+.item-facts-table tr:nth-child(even) { background: rgba(43,40,31,.62); }
+.item-effect-note { margin: -2px 0 10px; color: #d8d0b9; }
+
+/* 人物卡导入 / 导出弹窗：长文本编辑 + 与角色现状的逐项对照。 */
+.character-card-dialog { width: min(1080px, calc(100vw - 52px)); }
+.character-card-tabs { display: flex; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid #746b4b; background: #080808; }
+.character-card-tabs button {
+  padding: 5px 14px;
+  border: 1px solid #5b501e;
+  border-bottom: 0;
+  background: #24231d url('/assets/wod/css/skins/skin-4/images/btn/button2.png') center/500px 22px;
+  color: #d8d0b9;
+  font: inherit;
+  cursor: pointer;
+}
+.character-card-tabs button.selected { color: #fff; border-color: var(--gold); background-color: #4a4429; }
+.character-card-hint { margin: 6px 0 8px; color: #d4cba9; font-size: 12px; line-height: 1.6; }
+.character-card-hint strong { color: var(--gold); }
+.character-card-input {
+  display: block;
+  width: 100%;
+  min-height: 180px;
+  padding: 8px 9px;
+  border: 1px solid #a29462;
+  border-radius: 0;
+  background: #100f0b;
+  color: #ffe9a8;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre;
+}
+.character-card-input:focus { outline: 1px solid #f6ce36; border-color: #f6ce36; }
+.character-card-dialog .button-row { margin: 9px 0 4px; }
+.character-card-preview { margin-top: 12px; }
+.character-card-preview h3 { margin: 15px 0 6px; color: var(--gold); font-size: 14px; }
+.character-card-table { width: 100%; min-width: 560px; }
+.character-card-table td { color: #efe7cf; }
+.character-card-table td:first-child { color: #fff; }
+.character-card-value { color: #ffe13b!important; font-weight: 800; text-align: center; }
+.character-card-summary { padding: 8px 10px; border: 1px solid #50491e; background: rgba(12,13,9,.72); }
+.character-card-summary h3 { margin: 0 0 6px; color: var(--gold); font-size: 14px; }
+.character-card-summary ul { margin: 0; padding-left: 20px; line-height: 1.7; }
+.character-card-note { color: #d4cba9; font-size: 12px; }
+.character-card-details { margin: 8px 0; padding: 7px 9px; border: 1px solid #50491e; background: rgba(43,40,31,.62); }
+.character-card-details summary { color: var(--gold); cursor: pointer; }
+.character-card-details ul { margin: 6px 0 0; padding-left: 20px; line-height: 1.7; font-size: 12px; }
+.character-card-result { margin-top: 10px; padding: 8px 10px; border: 1px solid #6b5f22; background: rgba(20,22,14,.85); }
+.character-card-result h3 { margin: 0 0 4px; color: var(--gold); font-size: 14px; }
+.card-change { color: #ffe13b; font-weight: 800; }
+.card-same { color: #8f8a76; }
+.card-skip { color: #ff9603; font-weight: 700; }
+
+@media (max-width: 720px) {
+  .equipment-board { grid-template-columns: 1fr; }
+  .skill-dialog-backdrop { padding: 8px; }
+  .skill-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+  .skill-detail-overview { grid-template-columns: 1fr; }
+  .skill-description { border-right: 0; border-bottom: 1px solid #17140e; }
+  .item-facts-table th { width: 42%; }
+  .armor-block,
+  .damage-block,
+  .combat-block:nth-child(3),
+  .combat-block:nth-child(4) { grid-column: 1; grid-row: auto; }
+  .holder-effect-groups { grid-template-columns: 1fr; }
+  .character-card-dialog { width: calc(100vw - 16px); }
+}
