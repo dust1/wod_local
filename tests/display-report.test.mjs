@@ -33,6 +33,38 @@ test("展示战报只保留四阶段、数值快照与命中伤害结果", () =>
   assert.equal(JSON.stringify(report).includes("不得保存"), false);
 });
 
+test("同一次行动的多次尝试合并成一行，行动级失败单独成行", () => {
+  const round = 1;
+  const phase = "MainActionsExecuted";
+  const snapshot = { actorBuffs: [], skillEffects: [], itemEffects: [], setEffects: [] };
+  const report = createDisplayBattleReport({
+    dungeonName: "测试地城",
+    battleName: "测试战斗",
+    result: "victory",
+    roundCount: 1,
+    levelNumber: 1,
+    events: [
+      // 行动 1：第一条指令没有合法目标，顺位到第二条才真正执行 → 只展示执行的那次
+      { round, phase, type: "SkillAttempted", actorId: "h", actorName: "英雄", skillId: "a", skillName: "甲技能", actionSchedule: { initiative: 30, ordinal: 1, totalActions: 2 }, actionSnapshot: snapshot },
+      { round, phase, type: "SkillFailed", actorId: "h", actorName: "英雄", skillId: "a", skillName: "甲技能", reason: "noTargets", reasonLabel: "没有合法目标", consumedAction: false, actionSchedule: { initiative: 30, ordinal: 1, totalActions: 2 } },
+      { round, phase, type: "SkillAttempted", actorId: "h", actorName: "英雄", skillId: "b", skillName: "乙技能", actionSchedule: { initiative: 30, ordinal: 1, totalActions: 2 }, actionSnapshot: snapshot },
+      { round, phase, type: "TargetSelected", actorId: "h", targetId: "m", targetName: "木偶" },
+      // 行动 2：一整圈都不可用
+      { round, phase, type: "SkillFailed", actorId: "h", actorName: "英雄", skillId: null, skillName: null, reason: "noUsableCommand", reasonLabel: "无法执行任何行动", consumedAction: true, actionSchedule: { initiative: 12, ordinal: 2, totalActions: 2 } },
+    ],
+  });
+  const actions = report.rounds[0].mainRound;
+  assert.equal(actions.length, 2, "一次行动一行");
+  assert.equal(actions[0].skill.name, "乙技能");
+  assert.equal(actions[0].failure, null, "被取代的尝试不应把整行标成失败");
+  assert.deepEqual(actions[0].targets.map((target) => target.targetName), ["木偶"]);
+  assert.deepEqual(actions[0].schedule, { initiative: 30, ordinal: 1, totalActions: 2 });
+  assert.equal(actions[1].skill.name, null);
+  assert.deepEqual(actions[1].failure, { reason: "noUsableCommand", reasonLabel: "无法执行任何行动" });
+  assert.deepEqual(actions[1].schedule, { initiative: 12, ordinal: 2, totalActions: 2 });
+  assert.deepEqual(actions[1].targets, []);
+});
+
 test("展示战报保留技能尝试的失败原因，避免把失败显示为成功使用", () => {
   const report = createDisplayBattleReport({
     dungeonName: "测试地城",
@@ -47,4 +79,21 @@ test("展示战报保留技能尝试的失败原因，避免把失败显示为�
   });
   assert.deepEqual(report.rounds[0].mainRound[0].failure, { reason: "insufficientMana", reasonLabel: "法力不足" });
   assert.deepEqual(report.rounds[0].mainRound[0].targets, []);
+});
+
+test("先攻战报保留基础值、投掷值、硬加值与跳过原因", () => {
+  const report = createDisplayBattleReport({
+    dungeonName: "测试地城",
+    battleName: "测试战斗",
+    result: "draw",
+    roundCount: 1,
+    levelNumber: 1,
+    events: [
+      { round: 1, phase: "InitiativeSkillsExecuted", type: "SkillAttempted", actorId: "h", actorName: "英雄", skillId: "fast", skillName: "疾风", actionSnapshot: { actorBuffs: [], skillEffects: [], itemEffects: [], setEffects: [] } },
+      { round: 1, phase: "InitiativeScheduleGenerated", type: "InitiativeRolled", actorId: "h", actorName: "英雄", initiativeBase: 120, initiativeRoll: 147, initiativeHardBonus: 12, initiative: 159 },
+      { round: 1, phase: "InitiativeSkillsExecuted", type: "SkillFailed", actorId: "m", actorName: "法师", skillId: "slow", skillName: "凝神", reason: "insufficientMana", reasonLabel: "法力不足", requiredMana: 33, currentMana: 27, actionSnapshot: { actorBuffs: [], skillEffects: [], itemEffects: [], setEffects: [] } },
+    ],
+  });
+  assert.deepEqual(report.rounds[0].initiative[0].initiativeDetails, { initiative: 159, base: 120, roll: 147, hardBonus: 12 });
+  assert.deepEqual(report.rounds[0].initiative[1].failure, { reason: "insufficientMana", reasonLabel: "法力不足", requiredMana: 33, currentMana: 27 });
 });

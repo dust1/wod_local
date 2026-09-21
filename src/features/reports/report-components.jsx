@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { WodButton } from "../../components/ui.jsx";
+import { isActionLevelFailure } from "../../../game/commands/cursor.mjs";
 
 const EFFECT_TARGET_LABELS = {
   strength: "力量", constitution: "体质", intelligence: "智力", dexterity: "灵巧",
@@ -67,6 +68,43 @@ function costText(costs = []) {
   return costs.map((cost) => `${cost.amount} ${cost.resourceLabel ?? (cost.resource === "health" ? "体力" : "法力")}`).join(",");
 }
 
+const HIT_GRADE_CLASS_BY_LABEL = { 闪避: "miss", 命中: "hit", 重击: "heavy", 致命一击: "critical" };
+
+/** 判定骰与伤害数值缺失时显示占位符，避免战报出现 undefined。 */
+function displayNumber(value) {
+  return value === undefined || value === null ? "—" : String(value);
+}
+
+/**
+ * 一次行动对单个目标的结果：命中等级、双方判定骰、伤害与治疗。
+ *
+ * 这些数值由 game/events/display-report.mjs 在结算时固化进快照，
+ * 渲染层只负责把它们展示出来，不参与任何判定。
+ */
+function TargetOutcome({ target }) {
+  const damage = target.damage ?? [];
+  const healing = target.healing ?? [];
+  const graded = target.hit != null || target.evade != null;
+  return <span className="compact-report-target">
+    <span className="compact-report-target-line">
+      <span className="report-target-name">{target.targetName}</span>
+      {target.grade && <span className={`report-grade grade-${HIT_GRADE_CLASS_BY_LABEL[target.grade] ?? "hit"}`}>{target.grade}</span>}
+    </span>
+    {graded && <span className="report-rolls" title="命中骰与闪避骰是本次攻击的实际投点">
+      <span className="report-roll-hit">命中骰 {displayNumber(target.hit)}</span>
+      <span className="report-roll-evade">闪避骰 {displayNumber(target.evade)}</span>
+    </span>}
+    {damage.map((entry, damageIndex) => <span className="report-damage" key={`damage-${damageIndex}`}>
+      {displayNumber(entry.amount)}{entry.damageType ? ` ${entry.damageType}` : ""}伤害
+      {entry.healthAfter != null && <small>（剩余体力 {entry.healthAfter}）</small>}
+    </span>)}
+    {healing.map((entry, healingIndex) => <span className="report-healing" key={`healing-${healingIndex}`}>
+      恢复 {displayNumber(entry.amount)} 体力
+      {entry.healthAfter != null && <small>（当前体力 {entry.healthAfter}）</small>}
+    </span>)}
+  </span>;
+}
+
 function CompactPhase({ label, actions, playerIds, onActor }) {
   if (actions.length === 0) return null;
   return <section className="compact-report-phase">
@@ -75,17 +113,40 @@ function CompactPhase({ label, actions, playerIds, onActor }) {
       <span className="compact-report-call">
         {row.schedule && `先攻 ${row.schedule.initiative} 第 ${row.schedule.ordinal} 步行动/共 ${row.schedule.totalActions} 步　`}
         <button className={playerIds.has(String(row.actor.id)) ? "report-actor player" : "report-actor"} onClick={() => onActor(row)}>{row.actor.name}</button>
-        <span>{row.failure ? " 尝试使用 " : " 使用 "}</span>
-        <span className="report-skill" title={`技能等级：${row.skill.level}\n${effectText(row.skill.effects)}`}>{row.skill.name}</span>
-        {(row.costs.length > 0 || row.items.length > 0) && <span>(
-          {row.costs.length > 0 && <span className="report-cost">{costText(row.costs)}</span>}
-          {row.costs.length > 0 && row.items.length > 0 && "/"}
-          {row.items.map((item, itemIndex) => <span key={item.id}>{itemIndex > 0 && ","}<span className="report-item" title={itemEffectText(item)}>{item.name}</span></span>)}
-        )</span>}
-        {row.targets.length > 0 && " 给"}{label === "先攻" && `：先攻 ${row.initiative ?? "—"}`}
-        {row.failure && <span className="warning"> 失败：{row.failure.reasonLabel}</span>}
+        {isActionLevelFailure(row.failure?.reason) ? (
+          // 行动级失败：「{角色名} 无法执行任何行动」/「{角色名} 没有配置指令」，
+          // 没有具体技能、物品与目标可显示。
+          <span className="warning"> {row.failure.reasonLabel}</span>
+        ) : label === "先攻" ? (<>
+          <span> 使用</span>
+          <span className="report-skill" title={`技能等级：${row.skill.level}\n${effectText(row.skill.effects)}`}>{row.skill.name}</span>
+          {(row.costs.length > 0 || row.items.length > 0) && <span>(
+            {row.costs.length > 0 && <span className="report-cost">{costText(row.costs)}</span>}
+            {row.costs.length > 0 && row.items.length > 0 && "/"}
+            {row.items.map((item, itemIndex) => <span key={item.id}>{itemIndex > 0 && ","}<span className="report-item" title={itemEffectText(item)}>{item.name}</span></span>)}
+          )</span>}
+          {row.initiativeDetails ? <span className="report-initiative-breakdown">
+            <span><small>基础</small>{displayNumber(row.initiativeDetails.base)}</span>
+            <span><small>投掷</small>{displayNumber(row.initiativeDetails.roll)}</span>
+            <span><small>硬加值</small>{displayNumber(row.initiativeDetails.hardBonus ?? 0)}</span>
+            <b><small>最终</small>{displayNumber(row.initiative)}</b>
+          </span> : <span>: 先攻{row.initiative ?? "—"}</span>}
+          {row.failure && <span className="warning"> 失败：{row.failure.reasonLabel}{row.failure.requiredMana != null ? `（需要 ${row.failure.requiredMana}，当前 ${row.failure.currentMana}）` : ""}</span>}
+        </>) : (<>
+          <span>{row.failure ? " 尝试使用 " : " 使用 "}</span>
+          <span className="report-skill" title={`技能等级：${row.skill.level}\n${effectText(row.skill.effects)}`}>{row.skill.name}</span>
+          {(row.costs.length > 0 || row.items.length > 0) && <span>(
+            {row.costs.length > 0 && <span className="report-cost">{costText(row.costs)}</span>}
+            {row.costs.length > 0 && row.items.length > 0 && "/"}
+            {row.items.map((item, itemIndex) => <span key={item.id}>{itemIndex > 0 && ","}<span className="report-item" title={itemEffectText(item)}>{item.name}</span></span>)}
+          )</span>}
+          {row.targets.length > 0 && " 给"}
+          {row.failure && <span className="warning"> 失败：{row.failure.reasonLabel}</span>}
+        </>)}
       </span>
-      {row.targets.length > 0 && <span className="compact-report-targets">{row.targets.map((target, targetIndex) => <span key={`${target.targetId}-${targetIndex}`}>{target.targetName}</span>)}</span>}
+      {label !== "先攻" && row.targets.length > 0 && <span className="compact-report-targets">
+        {row.targets.map((target, targetIndex) => <TargetOutcome key={`${target.targetId}-${targetIndex}`} target={target} />)}
+      </span>}
     </div>)}
   </section>;
 }

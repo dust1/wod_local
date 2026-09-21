@@ -585,6 +585,17 @@ test("内容目录在缺少生成数据时仍可用并给出告警", () => {
   assert.ok(Array.isArray(listGeneratedFiles()));
 });
 
+test("内容目录恢复 ETL 未表示的动态目标数量公式", () => {
+  const catalog = loadCatalog();
+  const skill = catalog.skills.get("skill-275");
+  assert.equal(skill.name, "天赋：自然学识");
+  assert.deepEqual(skill.target.maxTargetsFormula, {
+    base: 2,
+    terms: [{ scale: "heroLevel", ratio: 10 }],
+    rawText: "2 +10%×英雄等级",
+  });
+});
+
 test("人工校正按 sourceId 与 ETL 记录合并，并统一字段形状", () => {
   const catalog = loadCatalog();
   const sword = catalog.skills.get("basic-swordsmanship");

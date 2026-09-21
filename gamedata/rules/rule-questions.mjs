@@ -23,8 +23,11 @@ export const RULE_QUESTIONS = [
     id: "random-roll-distribution",
     question: "随机投点的精确概率分布和随机算法",
     status: "hypothesis",
-    evidence: [{ kind: "textbook", ref: "§13.5", note: "只确认 0 ≤ 实际投点 ≤ 2 × 平均值" }],
-    experimentalPolicy: "roll:uniform-0-2mean",
+    evidence: [
+      { kind: "textbook", ref: "§13.5", note: "确认 0 ≤ 实际投点 ≤ 2 × 平均值" },
+      { kind: "research", ref: "用户提供的《统计分析》骰子研究文档", note: "给出 1 至 60 点的主骰/副骰换算表" },
+    ],
+    experimentalPolicy: "roll:wod-dice-pool-int",
   },
   {
     id: "random-flat-range",
@@ -119,10 +122,11 @@ export const RULE_QUESTIONS = [
   },
   {
     id: "failed-attempt-cost",
-    question: "技能失败是否消耗资源、物品、次数或行动",
+    question: "技能失败是否消耗资源、物品、次数或行动；主回合一整圈都没有可执行指令时如何结算",
     status: "hypothesis",
     evidence: [{ kind: "textbook", ref: "§17.3" }],
     experimentalPolicy: "failureCost:default-failure-cost",
+    note: "当前实现：调用前预检不通过（同源效果仍在生效、法力不足）与「没有合法目标」都不消耗行动并顺位到下一条指令；一次行动最多检查一整圈，一圈都不可用时判定本次行动失败、消耗行动点，并在战报中显示「无法执行任何行动」。",
   },
   {
     id: "hand-slot-occupancy",

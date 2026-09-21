@@ -93,6 +93,30 @@ export function parseTiming(rawText = "") {
 
 export const TARGET_SIDES = Object.freeze(["ally", "enemy", "either"]);
 
+/** 解析「2 +10%×英雄等级」这类动态目标数量公式。 */
+export function parseMaxTargetsFormula(rawText = "") {
+  const text = String(rawText).replace(/\s+/g, "");
+  const baseMatch = /^([+-]?\d+(?:\.\d+)?)/.exec(text);
+  const terms = [];
+  const pattern = /([+-]?\d+(?:\.\d+)?)%[x×*](英雄等级|技能等级)/g;
+  for (const match of text.matchAll(pattern)) {
+    terms.push({ scale: match[2] === "英雄等级" ? "heroLevel" : "skillLevel", ratio: Number(match[1]) });
+  }
+  if (!baseMatch && terms.length === 0) return null;
+  return { base: Number(baseMatch?.[1] ?? 0), terms, rawText: String(rawText) };
+}
+
+/** 目标个数在技能释放时按实时等级计算，并向下取整。 */
+export function resolveMaxTargets(target, context = {}) {
+  const formula = target?.maxTargetsFormula;
+  if (!formula) return Math.max(0, Math.floor(Number(target?.maxTargets ?? 1)));
+  const exact = Number(formula.base ?? 0) + (formula.terms ?? []).reduce((sum, term) => {
+    const scale = term.scale === "heroLevel" ? Number(context.heroLevel ?? 0) : Number(context.skillLevel ?? 0);
+    return sum + scale * Number(term.ratio ?? 0) / 100;
+  }, 0);
+  return Math.max(0, Math.floor(exact));
+}
+
 /**
  * 从技能页的“目标”文本解析目标模式。
  * 规则见 §8.4：同位置 AOE 的所有目标必须来自同一站位，人数不足不得跨位置补齐。
@@ -155,6 +179,7 @@ export function createSkillDefinition(input) {
       side: input.target?.side ?? "enemy",
       mode: input.target?.mode ?? "single",
       maxTargets: input.target?.maxTargets ?? 1,
+      maxTargetsFormula: input.target?.maxTargetsFormula ?? null,
       positionPriority: input.target?.positionPriority,
       allowSummons: input.target?.allowSummons ?? true,
       rawText: input.target?.rawText ?? "",

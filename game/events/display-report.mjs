@@ -1,3 +1,5 @@
+import { isActionLevelFailure } from "../commands/cursor.mjs";
+
 function compactValues(values = []) {
   return values.map(({ target = null, kind = null, value = null }) => ({ target, kind, value }));
 }
@@ -57,13 +59,39 @@ function schedulesFor(events) {
   return queues;
 }
 
+/**
+ * 一次展示行动的开始事件。
+ * 技能调用与干等各自开始一次行动；「无法执行任何行动」「没有配置指令」
+ * 这类行动级失败没有技能调用，自己就是那一行。
+ */
+function startsAction(event, phase) {
+  return event.type === "SkillAttempted"
+    || event.type === "ActionWaited"
+    || (phase === "InitiativeSkillsExecuted" && event.type === "SkillFailed")
+    || (event.type === "SkillFailed" && isActionLevelFailure(event.reason));
+}
+
+/** 事件所属行动槽的标识；没有该标记时（旧快照）每次调用各算一次行动。 */
+function actionKey(event) {
+  if (!event.actionSchedule) return null;
+  return `${event.actorId}:${event.actionSchedule.ordinal}`;
+}
+
 function actionRows(events, phase, scheduleQueues, initiativeByActor) {
   const phaseEvents = events.filter((event) => event.phase === phase);
   const groups = [];
   let current = null;
   for (const event of phaseEvents) {
-    if (event.type === "SkillAttempted" || event.type === "ActionWaited") {
-      current = { attempt: event, events: [] };
+    if (startsAction(event, phase)) {
+      // 同一次行动里的重复尝试（先「没有合法目标」再顺位到下一条指令）合并成一行：
+      // 只展示真正执行过的那次调用，被它取代的尝试只留在事件流里。
+      const key = actionKey(event);
+      if (current && key && current.actionKey === key) {
+        current.attempt = event;
+        current.events = [];
+        continue;
+      }
+      current = { attempt: event, events: [], actionKey: key };
       groups.push(current);
     } else if (current) current.events.push(event);
   }
@@ -87,12 +115,18 @@ function actionRows(events, phase, scheduleQueues, initiativeByActor) {
     const snapshot = attempt.actionSnapshot ?? {};
     const costs = actionEvents.filter((event) => event.type === "ResourceSpent" && event.reason === "skillCost")
       .map(({ resource, resourceLabel, amount }) => ({ resource, resourceLabel, amount }));
-    const failed = actionEvents.find((event) => event.type === "SkillFailed" && String(event.actorId) === String(attempt.actorId));
-    const schedule = phase === "MainActionsExecuted" ? scheduleQueues.get(String(attempt.actorId))?.shift() ?? null : null;
+    // 行动级失败（无法执行任何行动 / 没有配置指令）没有技能调用，失败就是这一行本身。
+    const failed = attempt.type === "SkillFailed"
+      ? attempt
+      : actionEvents.find((event) => event.type === "SkillFailed" && String(event.actorId) === String(attempt.actorId));
+    const schedule = attempt.actionSchedule
+      ? { initiative: attempt.actionSchedule.initiative, ordinal: attempt.actionSchedule.ordinal, totalActions: attempt.actionSchedule.totalActions }
+      : phase === "MainActionsExecuted" ? scheduleQueues.get(String(attempt.actorId))?.shift() ?? null : null;
     return {
       actionIndex: actionIndex + 1,
       schedule,
-      initiative: initiativeByActor.get(String(attempt.actorId)) ?? null,
+      initiative: initiativeByActor.get(String(attempt.actorId))?.initiative ?? null,
+      initiativeDetails: initiativeByActor.get(String(attempt.actorId)) ?? null,
       actor: {
         id: attempt.actorId,
         name: attempt.actorName,
@@ -106,7 +140,7 @@ function actionRows(events, phase, scheduleQueues, initiativeByActor) {
         initiative: snapshot.initiative,
         actions: snapshot.actions,
       },
-      skill: { id: attempt.skillId, name: attempt.skillName, level: snapshot.skillLevel, effects: compactEffects(snapshot.skillEffects) },
+      skill: { id: attempt.skillId ?? null, name: attempt.skillName ?? null, level: snapshot.skillLevel, effects: compactEffects(snapshot.skillEffects) },
       items: (attempt.calledItems ?? []).map((item) => ({
         id: String(item.id),
         name: item.name,
@@ -116,7 +150,12 @@ function actionRows(events, phase, scheduleQueues, initiativeByActor) {
       })),
       costs,
       targets,
-      failure: failed ? { reason: failed.reason, reasonLabel: failed.reasonLabel ?? failed.reason } : null,
+      failure: failed ? {
+        reason: failed.reason,
+        reasonLabel: failed.reasonLabel ?? failed.reason,
+        ...(failed.requiredMana == null ? {} : { requiredMana: failed.requiredMana }),
+        ...(failed.currentMana == null ? {} : { currentMana: failed.currentMana }),
+      } : null,
     };
   });
 }
@@ -133,7 +172,12 @@ export function createDisplayBattleReport({ dungeonName, battleName, result, rou
     rounds: rounds.map((round) => {
       const roundEvents = events.filter((event) => event.round === round);
       const schedules = schedulesFor(roundEvents);
-      const initiativeByActor = new Map(roundEvents.filter((event) => event.type === "InitiativeRolled").map((event) => [String(event.actorId), event.initiative]));
+      const initiativeByActor = new Map(roundEvents.filter((event) => event.type === "InitiativeRolled").map((event) => [String(event.actorId), {
+        initiative: event.initiative,
+        base: event.initiativeBase ?? event.initiativeMean ?? null,
+        roll: event.initiativeRoll ?? event.initiative,
+        hardBonus: event.initiativeHardBonus ?? null,
+      }]));
       const statuses = roundEvents.filter((event) => event.type === "StatusSnapshot");
       return {
         round,

@@ -78,8 +78,10 @@ export function enumerateCandidates({ actor, units, spec, attackType, configured
   const wantedSide = spec?.side ?? "enemy";
   const candidates = units.filter((unit) => {
     if (!isSelectable(unit)) return false;
-    // “己方全体”包含施法者本人；普通单体“队友”仍不把自己列为候选。
-    if (unit.id === actor.id && !["self", "globalAoE"].includes(spec?.mode)) return false;
+    // 「己方全体」「同一位置的所有队友」这类**群体**描述都包含施法者本人：
+    // 施法者也在那个位置上、也属于“己方”，所以只有他自己在前排时同样成立。
+    // 普通单体“队友”（例如治疗单体）仍不把自己列为候选，否则会改成自我治疗。
+    if (unit.id === actor.id && !["self", "globalAoE", "samePositionAoE"].includes(spec?.mode)) return false;
     if (wantedSide === "ally" && unit.side !== actor.side) return false;
     if (wantedSide === "enemy" && unit.side === actor.side) return false;
     if (!spec?.allowSummons && isSummon(unit)) return false;

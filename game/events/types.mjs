@@ -8,6 +8,7 @@ export const BATTLE_EVENT_TYPES = Object.freeze([
   "SkillFailed",
   "ResourceSpent",
   "ResourceChanged",
+  "InitiativeSkillCalculated",
   "InitiativeRolled",
   "ActionScheduled",
   "ActionWaited",

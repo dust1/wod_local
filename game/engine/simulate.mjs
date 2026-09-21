@@ -13,7 +13,7 @@ import { POSITION_LABELS } from "../domain/positions.mjs";
 import { EffectLedger, activationRoundOf, sameSourceBehavior } from "../domain/effect.mjs";
 import { event, resetEventSequence } from "../events/types.mjs";
 import { createRandomStream } from "../policies/random.mjs";
-import { DEFAULT_ROLL_POLICY, createUniformRollPolicy } from "../policies/roll.mjs";
+import { createDiceRollPolicy } from "../policies/roll.mjs";
 import { buildInitiativeSchedule, DEFAULT_DECAY_POLICY, DEFAULT_TIE_BREAK_POLICY } from "../policies/initiative.mjs";
 import { resolveDamage, zeroHitGradePercents, zeroReductionPolicy } from "../formulas/damage-pipeline.mjs";
 import { hitGradeDetail, debuffApplies } from "../formulas/hit-grade.mjs";
@@ -28,9 +28,10 @@ import { createReplayEnvelope, hashInputSnapshot } from "../replay/envelope.mjs"
 import { DEFAULT_ROUNDING_POLICY } from "../formulas/calculation.mjs";
 import { meleePositionHitPercent, isMeleeAttackType } from "../domain/positions.mjs";
 import { resolveModifier } from "../modifiers/pipeline.mjs";
+import { resolveMaxTargets } from "../domain/skill.mjs";
 
-export const RULESET_VERSION = "wod-complete-rules-v2";
-export const RANDOM_ALGORITHM_VERSION = "mulberry32-fnv1a-v1";
+export const RULESET_VERSION = "wod-complete-rules-v3";
+export const RANDOM_ALGORITHM_VERSION = "mulberry32-fnv1a-wod-dice-v2";
 export const DEFAULT_MAX_ROUNDS = 30;
 
 const ATTACKER_SIDE = "attacker";
@@ -50,18 +51,19 @@ function matchesScope(value, expected) {
   return value == null || value === "所有" || value === expected;
 }
 
-function applyCombatBonus(base, rows = [], label) {
+function combatBonusTerms(rows = [], label) {
   const applicable = rows.filter((row) => matchesScope(row.label, label));
   const multiplier = applicable.reduce((value, row) => value * (1 + Number(row.percent ?? 0) / 100), 1);
-  return base * multiplier + applicable.reduce((sum, row) => sum + Number(row.flat ?? 0), 0);
+  const flat = applicable.reduce((sum, row) => sum + Number(row.flat ?? 0), 0);
+  return { multiplier, flat };
 }
 
-function applyActiveCombatBonus(base, ledger, unitId, targetType, label) {
+function activeCombatBonusTerms(ledger, unitId, targetType, label) {
   const applicable = ledger.modifiersFor(unitId).filter((modifier) => modifier.target?.type === targetType && matchesScope(modifier.target?.key, label));
   const multiplier = applicable.filter((modifier) => modifier.kind === "percent" || modifier.kind === "globalPercent")
     .reduce((value, modifier) => value * (1 + Number(modifier.value ?? 0) / 100), 1);
   const flat = applicable.filter((modifier) => modifier.kind === "flat").reduce((sum, modifier) => sum + Number(modifier.value ?? 0), 0);
-  return base * multiplier + flat;
+  return { multiplier, flat };
 }
 
 function gradedCombatTerms(rows = [], damageType, attackType, grade) {
@@ -98,7 +100,7 @@ export function simulateBattle(input) {
   const seed = String(input.randomSeed ?? "seed-0");
   const skills = toSkillMap(input.skills);
   const policies = input.policies ?? {};
-  const rollPolicy = policies.rollPolicy ?? createUniformRollPolicy({ integer: true });
+  const rollPolicy = policies.rollPolicy ?? createDiceRollPolicy();
   const roundingPolicy = policies.roundingPolicy ?? DEFAULT_ROUNDING_POLICY;
   // 带符号的缩放修正按绝对值应用取整策略后再恢复符号。
   // 否则 floor(+13.25)=13、floor(-13.25)=-14，会让同源的等量增减无法抵消。
@@ -236,10 +238,14 @@ export function simulateBattle(input) {
     paySummonUpkeep();
 
     enterPhase("InitiativeSkillsExecuted");
-    for (const unit of livingUnits()) executeInitiativeSkill(unit);
+    const initiativeSkillResults = new Map();
+    for (const unit of livingUnits()) {
+      const result = executeInitiativeSkill(unit);
+      if (result?.initiative) initiativeSkillResults.set(unit.id, result.initiative);
+    }
 
     enterPhase("InitiativeScheduleGenerated");
-    const { schedule, initiativeValues } = generateSchedule();
+    const { schedule, initiativeValues } = generateSchedule(initiativeSkillResults);
 
     enterPhase("MainActionsExecuted");
     executeMainActions(schedule, initiativeValues);
@@ -376,35 +382,47 @@ export function simulateBattle(input) {
       cursor = new CommandCursor(usable, { failureCostPolicy });
       preRoundCursors.set(unit.id, cursor);
     }
-    const command = cursor.current();
-    if (!command) return;
-    if (command.skillId === WAIT_COMMAND_SKILL_ID) {
-      cursor.record({ ok: true });
-      emit("ActionWaited", { actorId: unit.id, actorName: unit.name, skillId: WAIT_COMMAND_SKILL_ID, skillName: "干等", phase: "PreRoundCommandsExecuted" });
+    // 预检不通过的指令（同源效果仍在生效、法力不足）是空操作：不产生事件、不消耗法力，
+    // 游标照常前进，按设置顺序继续检查下一条回合前指令；下一次到达时重新判断
+    // （效果到期或法力回复后仍会正常释放）。
+    // 因此这里最多检查一整圈，找到一条真正需要执行的指令为止；一圈都被跳过时本回合不释放任何回合前技能。
+    for (let checked = 0; checked < cursor.commands.length; checked += 1) {
+      const command = cursor.current();
+      if (!command) return;
+      if (command.skillId === WAIT_COMMAND_SKILL_ID) {
+        cursor.record({ ok: true });
+        emit("ActionWaited", { actorId: unit.id, actorName: unit.name, skillId: WAIT_COMMAND_SKILL_ID, skillName: "干等", phase: "PreRoundCommandsExecuted" });
+        return;
+      }
+      const skill = skills.get(command.skillId);
+      if (!skill) {
+        cursor.record({ ok: false, reason: "skillNotLearned" });
+        emit("SkillFailed", { actorId: unit.id, actorName: unit.name, skillId: command.skillId, skillName: command.skillId, reason: "skillNotLearned", reasonLabel: "未学会该技能" });
+        return;
+      }
+      if (!skill.timing.preRound) {
+        cursor.record({ ok: false, reason: "cannotUseTiming" });
+        emit("SkillFailed", { actorId: unit.id, actorName: unit.name, skillId: skill.id, skillName: skill.name, reason: "cannotUseTiming", reasonLabel: "该阶段不能使用" });
+        return;
+      }
+      const outcome = performSkill(unit, skill, command, { phase: "PreRoundCommandsExecuted" });
+      if (outcome.skipped) {
+        // 预检不通过（同源效果仍在生效 / 法力不足）：不产生事件、不消耗法力，顺位到下一条。
+        cursor.skip();
+        continue;
+      }
+      const record = cursor.record({ ok: outcome.ok, reason: outcome.reason });
+      if (!outcome.ok) emit("SkillFailed", {
+        actorId: unit.id,
+        actorName: unit.name,
+        skillId: skill.id,
+        skillName: skill.name,
+        reason: outcome.reason,
+        reasonLabel: FAILURE_REASON_LABELS[outcome.reason] ?? outcome.reason,
+        consumedAction: record.consumedAction,
+      });
       return;
     }
-    const skill = skills.get(command.skillId);
-    if (!skill) {
-      cursor.record({ ok: false, reason: "skillNotLearned" });
-      emit("SkillFailed", { actorId: unit.id, actorName: unit.name, skillId: command.skillId, skillName: command.skillId, reason: "skillNotLearned", reasonLabel: "未学会该技能" });
-      return;
-    }
-    if (!skill.timing.preRound) {
-      cursor.record({ ok: false, reason: "cannotUseTiming" });
-      emit("SkillFailed", { actorId: unit.id, actorName: unit.name, skillId: skill.id, skillName: skill.name, reason: "cannotUseTiming", reasonLabel: "该阶段不能使用" });
-      return;
-    }
-    const outcome = performSkill(unit, skill, command, { phase: "PreRoundCommandsExecuted" });
-    const record = cursor.record({ ok: outcome.ok, reason: outcome.reason });
-    if (!outcome.ok) emit("SkillFailed", {
-      actorId: unit.id,
-      actorName: unit.name,
-      skillId: skill.id,
-      skillName: skill.name,
-      reason: outcome.reason,
-      reasonLabel: FAILURE_REASON_LABELS[outcome.reason] ?? outcome.reason,
-      consumedAction: record.consumedAction,
-    });
   }
 
   function applyNaturalRegeneration() {
@@ -459,7 +477,7 @@ export function simulateBattle(input) {
       emit("SkillFailed", { actorId: unit.id, actorName: unit.name, skillId: skill.id, skillName: skill.name, reason: "cannotUseTiming", reasonLabel: "该阶段不能使用" });
       return;
     }
-    performSkill(unit, skill, {
+    const outcome = performSkill(unit, skill, {
       skillId: skill.id,
       itemIds: floorPlan.initiativeItemIds ?? (floorPlan.initiativeItemId == null ? [] : [floorPlan.initiativeItemId]),
       itemEffects: floorPlan.initiativeItemEffects ?? [],
@@ -467,9 +485,39 @@ export function simulateBattle(input) {
       calledItems: floorPlan.initiativeCalledItems ?? [],
       target: { mode: "auto" },
     }, { phase: "InitiativeSkillsExecuted" });
+    if (outcome?.skipped) {
+      const derived = derivedOf(unit);
+      const requiredMana = outcome.reason === "insufficientMana"
+        ? skillManaCost(unit, skill, { effectLedger: ledger, roundingPolicy })?.applied ?? null
+        : null;
+      emit("SkillFailed", {
+        actorId: unit.id,
+        actorName: unit.name,
+        skillId: skill.id,
+        skillName: skill.name,
+        reason: outcome.reason,
+        reasonLabel: FAILURE_REASON_LABELS[outcome.reason] ?? outcome.reason,
+        requiredMana,
+        currentMana: unit.mana,
+        consumedAction: false,
+        actionSnapshot: {
+          heroLevel: unit.level,
+          skillLevel: effectiveSkillLevelOf(unit, skill.id, { effectLedger: ledger, skill }),
+          attributes: { ...derived.attributes },
+          health: unit.health,
+          healthMax: derived.healthMax,
+          mana: unit.mana,
+          manaMax: derived.manaMax,
+          initiative: derived.initiative,
+          actions: derived.actions,
+          actorBuffs: [], skillEffects: [], itemEffects: [], setEffects: [],
+        },
+      });
+    }
+    return outcome;
   }
 
-  function generateSchedule() {
+  function generateSchedule(initiativeSkillResults = new Map()) {
     const derivedByUnit = new Map();
     const initiativeValues = new Map();
     const actionCounts = new Map();
@@ -484,15 +532,31 @@ export function simulateBattle(input) {
         || (unit.summonCreatedRound === round && unit.summonCreatedPhase === "PreRoundCommandsExecuted");
       if (!eligible) continue;
       acting.push(unit);
-      initiativeValues.set(unit.id, derived.initiativeExact);
+      const skillInitiative = initiativeSkillResults.get(unit.id);
+      const formulaMean = skillInitiative?.exact ?? derived.initiativeRollMean;
+      const percentMultiplier = skillInitiative ? skillInitiative.percentMultiplier : 1;
+      const initiativeBase = formulaMean * percentMultiplier;
+      const initiativeHardBonus = skillInitiative?.hardBonus ?? derived.initiativeHardBonus;
+      const initiativeRoll = rollPolicy.rollAroundMean(initiativeBase, {
+        purpose: "initiative",
+        randomStream: stream,
+        actorId: unit.id,
+      });
+      const initiativeExact = initiativeRoll + initiativeHardBonus;
+      const initiative = Math.max(0, Math.floor(initiativeExact));
+      initiativeValues.set(unit.id, initiativeExact);
       actionCounts.set(unit.id, derived.actions);
       emit("InitiativeRolled", {
         actorId: unit.id,
         actorName: unit.name,
-        initiative: derived.initiative,
-        initiativeExact: derived.initiativeExact,
+        initiative,
+        initiativeExact,
         skillName: floorPlanFor(unit)?.initiativeSkillId ? skills.get(floorPlanFor(unit).initiativeSkillId)?.name : undefined,
-        trace: derived.traces.initiative,
+        initiativeBase,
+        initiativeRoll,
+        initiativeHardBonus,
+        initiativeMean: initiativeBase + initiativeHardBonus,
+        trace: skillInitiative?.steps ?? derived.traces.initiative,
       });
     }
     const { schedule } = buildInitiativeSchedule({
@@ -521,14 +585,18 @@ export function simulateBattle(input) {
       if (!sideAlive(ATTACKER_SIDE) || !sideAlive("defender")) break;
       const actor = byId(entry.actorId);
       if (!actor || !actor.alive || !actor.present) continue;
+      // 本次行动槽的身份（第几步 / 共几步 / 先攻）。事件带上它以后，
+      // 展示战报就能把同一次行动里的多次尝试合成一行，并按槽位显示先攻序号。
+      const actionSchedule = { initiative: entry.initiative, ordinal: entry.ordinal, totalActions: entry.totalActions };
 
       // 行动开始 → 检查治疗触发器
-      const healResult = tryHealingInterrupt(actor);
+      const healResult = tryHealingInterrupt(actor, actionSchedule);
       if (healResult) continue;
 
       const floorPlan = floorPlanFor(actor);
+      // 完全没有配置主回合指令：同样消耗本次行动，并在战报里显示「{角色名} 没有配置指令」。
       if (!floorPlan || floorPlan.mainRound.length === 0) {
-        emit("SkillFailed", { actorId: actor.id, actorName: actor.name, skillId: null, skillName: "-", reason: "noCommands", reasonLabel: "没有配置指令" });
+        emit("SkillFailed", { actorId: actor.id, actorName: actor.name, skillId: null, skillName: "-", reason: "noCommands", reasonLabel: FAILURE_REASON_LABELS.noCommands, consumedAction: true, actionSchedule });
         continue;
       }
 
@@ -542,26 +610,37 @@ export function simulateBattle(input) {
         }
       }
 
-      // 无单位的释放位置不消耗本次行动：按设置顺序继续寻找，最多检查一整圈。
+      // 一次行动最多检查一整圈指令：中途找到能执行的指令就按它执行；
+      // 一整圈都没有任何指令能执行时，本次行动判定为失败并消耗行动点。
+      let resolved = false;
       for (let checked = 0; checked < cursor.commands.length; checked += 1) {
         const command = cursor.current();
         const check = cursor.isExecutable(command);
         if (!check.executable) {
           cursor.record({ ok: false, reason: check.reason });
+          diagnostics.warnings.push(`行动跳过 ${actor.id}:${command?.skillId ?? "-"} ${check.reason}`);
           continue;
         }
         if (command.skillId === WAIT_COMMAND_SKILL_ID) {
           cursor.record({ ok: true });
-          emit("ActionWaited", { actorId: actor.id, actorName: actor.name, skillId: WAIT_COMMAND_SKILL_ID, skillName: "干等", phase: "MainActionsExecuted" });
+          emit("ActionWaited", { actorId: actor.id, actorName: actor.name, skillId: WAIT_COMMAND_SKILL_ID, skillName: "干等", phase: "MainActionsExecuted", actionSchedule });
+          resolved = true;
           break;
         }
         const skill = skills.get(command.skillId);
         if (!skill) {
           const record = cursor.record({ ok: false, reason: "skillNotLearned" });
-          emit("SkillFailed", { actorId: actor.id, actorName: actor.name, skillId: command.skillId, skillName: command.skillId, reason: "skillNotLearned", reasonLabel: "未学会该技能", consumedAction: record.consumedAction });
+          emit("SkillFailed", { actorId: actor.id, actorName: actor.name, skillId: command.skillId, skillName: command.skillId, reason: "skillNotLearned", reasonLabel: FAILURE_REASON_LABELS.skillNotLearned, consumedAction: record.consumedAction, actionSchedule });
+          resolved = true;
           break;
         }
-        const outcome = performSkill(actor, skill, command, { phase: "MainActionsExecuted" });
+        const outcome = performSkill(actor, skill, command, { phase: "MainActionsExecuted", actionSchedule });
+        if (outcome.skipped) {
+          // 预检不通过（同源效果仍在生效 / 法力不足）：不产生事件、不消耗行动，顺位到下一条指令。
+          cursor.skip();
+          diagnostics.warnings.push(`行动跳过 ${actor.id}:${skill.id} ${outcome.reason}`);
+          continue;
+        }
         const record = cursor.record({ ok: outcome.ok, reason: outcome.reason });
         if (!outcome.ok) emit("SkillFailed", {
           actorId: actor.id,
@@ -571,14 +650,30 @@ export function simulateBattle(input) {
           reason: outcome.reason,
           reasonLabel: FAILURE_REASON_LABELS[outcome.reason] ?? outcome.reason,
           consumedAction: record.consumedAction,
+          actionSchedule,
         });
-        if (outcome.ok || record.consumedAction) break;
-        if (outcome.reason !== "noTargets") break;
+        const executed = outcome.ok || record.consumedAction;
+        resolved = executed;
+        if (executed) break;
+        // 未消耗行动的失败（没有合法目标）继续顺位检查下一条指令。
+      }
+      if (!resolved) {
+        // 一圈都不可用：这次行动是失败的，并且照常消耗行动点。
+        emit("SkillFailed", {
+          actorId: actor.id,
+          actorName: actor.name,
+          skillId: null,
+          skillName: null,
+          reason: "noUsableCommand",
+          reasonLabel: FAILURE_REASON_LABELS.noUsableCommand,
+          consumedAction: true,
+          actionSchedule,
+        });
       }
     }
   }
 
-  function tryHealingInterrupt(actor) {
+  function tryHealingInterrupt(actor, actionSchedule = null) {
     const floorPlan = floorPlanFor(actor);
     if (!floorPlan) return false;
     const healingCommands = floorPlan.mainRound.filter((command) => skills.get(command.skillId)?.baseType === "heal");
@@ -592,9 +687,18 @@ export function simulateBattle(input) {
     const chosen = selectHealingInterrupt({ healingCommands, triggers });
     if (!chosen) return false;
     const skill = skills.get(chosen.command.skillId);
+    // 付不起法力的治疗与普通指令一样属于空操作：不产生事件、不消耗本次行动，
+    // 交回常规指令流程继续顺位寻找可以执行的技能。
+    const healingCost = manaCostFor(actor, skill);
+    if (healingCost && actor.mana < healingCost.applied) return false;
     emit("TargetSelected", { actorId: actor.id, actorName: actor.name, targetId: chosen.targetId, targetName: chosen.trigger.unitName, reason: "healingInterrupt", note: chosen.reason });
-    performSkill(actor, skill, { ...chosen.command, target: { mode: "single", position: null, forcedTargetId: chosen.targetId } }, { phase: "MainActionsExecuted" });
+    performSkill(actor, skill, { ...chosen.command, target: { mode: "single", position: null, forcedTargetId: chosen.targetId } }, { phase: "MainActionsExecuted", actionSchedule });
     return true;
+  }
+
+  /** 技能在当前状态下的法力开销（含实时技能等级）；不需要法力的技能返回 null。 */
+  function manaCostFor(actor, skill) {
+    return skillManaCost(actor, skill, { effectLedger: ledger, roundingPolicy });
   }
 
   /**
@@ -627,6 +731,20 @@ export function simulateBattle(input) {
       rawText: effect.raw?.rawText ?? effect.rawText ?? null,
     });
     const derived = derivedOf(actor);
+    const targetless = selection.targets.length === 0;
+    // ---- 预检：付不起或纯空操作的指令不发生调用（§17.3 游标顺位到下一条）。
+    // 两者都不产生事件、不扣法力、不消耗行动，由调用方按设置顺序继续寻找可执行的指令。
+    // 同源不叠加（§15.4）：选中的目标全都仍带着该技能未结束的效果时整次调用是空操作；
+    // 只要还有一个目标需要加持（例如新加入的队友），就必须真的执行。
+    const redundantSupport = skill.baseType === "improve"
+      && components.length > 0
+      && !targetless
+      && selection.targets.every((target) => ledger.hasLiveFromSource(skill.id, target.id, "buff", skill.name));
+    if (redundantSupport) return { ok: false, reason: "sameSourceActive", skipped: true };
+    // 法力不足时顺位到下一条不需要法力的指令，而不是把这次行动浪费在必然失败的尝试上。
+    const cost = targetless ? null : manaCostFor(actor, skill);
+    if (cost && actor.mana < cost.applied) return { ok: false, reason: "insufficientMana", skipped: true };
+
     emit("SkillAttempted", {
       actorId: actor.id,
       actorName: actor.name,
@@ -635,6 +753,7 @@ export function simulateBattle(input) {
       itemIds: command.itemIds ?? (command.itemId == null ? [] : [command.itemId]),
       calledItems: command.calledItems ?? [],
       baseType: skill.baseType,
+      actionSchedule: context.actionSchedule ?? null,
       actionSnapshot: {
         heroLevel: actor.level,
         skillLevel,
@@ -664,16 +783,9 @@ export function simulateBattle(input) {
 
     // 失败尝试也必须先产生 SkillAttempted。展示战报以该事件划分行动；若在
     // 发出事件前返回，后续 SkillFailed 会被错误地归到上一条成功行动上。
-    if (selection.targets.length === 0) return { ok: false, reason: "noTargets" };
-    if (skill.baseType === "improve" && components.length > 0 && selection.targets.every((target) => ledger.hasLiveFromSource(skill.id, target.id, "buff", skill.name))) {
-      return { ok: false, reason: "sameSourceActive" };
-    }
+    if (targetless) return { ok: false, reason: "noTargets" };
 
-    const cost = skillManaCost(actor, skill, { effectLedger: ledger, roundingPolicy });
     if (cost) {
-      if (actor.mana < cost.applied) {
-        return { ok: false, reason: "insufficientMana" };
-      }
       actor.mana -= cost.applied;
       emit("ResourceSpent", { actorId: actor.id, actorName: actor.name, resource: "mana", resourceLabel: "法力", amount: cost.applied, reason: "skillCost", trace: cost });
     }
@@ -688,7 +800,10 @@ export function simulateBattle(input) {
     if (path === "improve") {
       return performSupport(actor, skill, command, derived, selection);
     }
-    if (["attack", "deteriorate", "defend", "initiative"].includes(path)) {
+    if (path === "initiative") {
+      return performInitiative(actor, skill, command, derived, selection);
+    }
+    if (["attack", "deteriorate", "defend"].includes(path)) {
       return performAttack(actor, skill, command, derived, { dealDamage: path === "attack", selection });
     }
     return { ok: false, reason: "cannotUseTiming" };
@@ -706,10 +821,15 @@ export function simulateBattle(input) {
       ?? (isMeleeAttackType(skill.attackType) ? null : plan?.general?.rangedPositionPriority
         ?? floorPlan?.rangedPositionPriority
         ?? null);
+    const targetSkillLevel = effectiveSkillLevelOf(actor, skill.id, { effectLedger: ledger, skill });
+    const resolvedTargetSpec = {
+      ...skill.target,
+      maxTargets: resolveMaxTargets(skill.target, { heroLevel: actor.level, skillLevel: targetSkillLevel }),
+    };
     return selectTargets({
       actor,
       units,
-      spec: skill.target,
+      spec: resolvedTargetSpec,
       attackType: skill.attackType,
       configuredPriority,
       randomStream: stream,
@@ -725,16 +845,19 @@ export function simulateBattle(input) {
 
     const means = skillMeans(actor, skill, { effectLedger: ledger, derived, roundingPolicy });
     const attackMean = means.attackMean ?? skillRollMean({ primary: derived.attributes.agility, secondary: derived.attributes.perception }, { roundingPolicy });
-    let attackExact = applyCombatBonus(attackMean.exact, actor.combat?.attackBonuses, skill.attackType);
-    attackExact = applyActiveCombatBonus(attackExact, ledger, actor.id, "attackBonus", skill.attackType);
+    const persistentAttack = combatBonusTerms(actor.combat?.attackBonuses, skill.attackType);
+    const activeAttack = activeCombatBonusTerms(ledger, actor.id, "attackBonus", skill.attackType);
     const positionPercent = isMeleeAttackType(skill.attackType) ? meleePositionHitPercent(actor.position, target.position) : 0;
-    attackExact *= 1 + positionPercent / 100;
-    const hit = rollPolicy.rollAroundMean(attackExact, { purpose: "hit", randomStream: stream, actorId: actor.id });
+    const attackExact = attackMean.exact * persistentAttack.multiplier * activeAttack.multiplier * (1 + positionPercent / 100);
+    const hit = rollPolicy.rollAroundMean(attackExact, { purpose: "hit", randomStream: stream, actorId: actor.id })
+      + persistentAttack.flat + activeAttack.flat;
 
     const targetDerived = derivedOf(target);
-    let evadeMean = applyCombatBonus(defaultEvadeMean(target, targetDerived), target.combat?.defenseBonuses, skill.attackType);
-    evadeMean = applyActiveCombatBonus(evadeMean, ledger, target.id, "defenseBonus", skill.attackType);
-    const evade = rollPolicy.rollAroundMean(evadeMean, { purpose: "evade", randomStream: stream, actorId: target.id });
+    const persistentDefense = combatBonusTerms(target.combat?.defenseBonuses, skill.attackType);
+    const activeDefense = activeCombatBonusTerms(ledger, target.id, "defenseBonus", skill.attackType);
+    const evadeMean = defaultEvadeMean(target, targetDerived) * persistentDefense.multiplier * activeDefense.multiplier;
+    const evade = rollPolicy.rollAroundMean(evadeMean, { purpose: "evade", randomStream: stream, actorId: target.id })
+      + persistentDefense.flat + activeDefense.flat;
     emit("AttackRolled", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, hit, evade, attackMean: attackExact, evadeMean, positionPercent, trace: attackMean });
 
     const detail = hitGradeDetail(hit, evade);
@@ -851,6 +974,32 @@ export function simulateBattle(input) {
     return { ok: true, reason: null };
   }
 
+  function performInitiative(actor, skill, command, derived, selection = resolveTargets(actor, skill, command)) {
+    const calculated = skillMeans(actor, skill, { effectLedger: ledger, derived, roundingPolicy }).initiativeMean ?? {
+      exact: derived.initiativeExact,
+      applied: derived.initiative,
+      steps: derived.traces.initiative,
+    };
+    // 先快照本次投点使用的百分比与硬加值，再施加该先攻技能自身的效果。
+    // 这样技能自己刚附加的 Buff 不会倒灌到同一次先攻投点中。
+    calculated.percentMultiplier = derived.initiativePercentMultiplier;
+    calculated.hardBonus = derived.initiativeHardBonus;
+    for (const target of selection.targets) {
+      emit("TargetSelected", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, mode: selection.mode, position: target.position });
+      applySkillEffects(actor, skill, target, command, { hit: true, dealDamage: false });
+    }
+    emit("InitiativeSkillCalculated", {
+      actorId: actor.id,
+      actorName: actor.name,
+      skillId: skill.id,
+      skillName: skill.name,
+      initiative: calculated.applied,
+      initiativeExact: calculated.exact,
+      trace: calculated.steps,
+    });
+    return { ok: true, reason: null, initiative: calculated };
+  }
+
   function performSummon(actor, skill, command, derived, context, selection = resolveTargets(actor, skill, command)) {
     const template = command?.summonTemplate ?? skill.summonTemplate;
     if (!template) return { ok: false, reason: "missingSummonDefinition" };
@@ -909,7 +1058,14 @@ export function simulateBattle(input) {
           const activationFields = { activation, activationRound: activationRoundOf(activation, round) };
           if (!["scaledFlat", "scaledPercent", "randomFlat"].includes(modifier.kind)) return { ...modifier, ...activationFields };
           let value = modifier.value ?? modifier.mean ?? 0;
-          try { value = roundModifierValue(resolveModifier(modifier, { heroLevel: actor.level, skillLevel: castSkillLevel })); } catch {}
+          try {
+            value = roundModifierValue(resolveModifier(modifier, {
+              heroLevel: actor.level,
+              skillLevel: castSkillLevel,
+              randomStream: stream,
+              rollPolicies: { [modifier.rollPolicyId]: rollPolicy },
+            }));
+          } catch {}
           return { ...modifier, kind: "flat", value, snapshotKind: modifier.kind, ...activationFields };
         }),
       };

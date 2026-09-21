@@ -87,13 +87,36 @@ function combatEffect(effect, sourceKind, sourceId, index, skillIdByName = new M
   };
 }
 
+function initiativeAttributeBinding(skill, repository, root) {
+  if (skill.baseType !== "initiative") return null;
+  if (skill.attributeFormula?.initiative) return skill.attributeFormula.initiative;
+  const sourceId = Number(skill.sourceId);
+  if (!Number.isFinite(sourceId)) return null;
+  for (const scope of ["profession", "race"]) {
+    const metadata = repository?.getSkillDetailMetadata?.(scope, sourceId);
+    if (!metadata) continue;
+    let detail = null;
+    try { detail = parseJson(readFileSync(resolve(root, metadata.json_path), "utf8"), null); } catch {}
+    const text = String(detail?.["详细属性"]?.["出手速度"] ?? "");
+    const [primaryName, secondaryName] = text.split(/[,，]/).map((part) => part.trim());
+    const primary = ATTRIBUTE_TARGET_KEYS[primaryName];
+    const secondary = ATTRIBUTE_TARGET_KEYS[secondaryName];
+    if (primary && secondary) return { primary, secondary };
+  }
+  return null;
+}
+
 /** 把目录中的技能目标效果转换为引擎可直接施加的效果。 */
-function battleSkillDefinitions(catalog) {
+function battleSkillDefinitions(catalog, repository, root = process.cwd()) {
   const skillIdByName = new Map([...catalog.skills.values()].map((skill) => [skill.name, skill.id]));
-  return Object.fromEntries([...catalog.skills].map(([id, skill]) => [id, {
-    ...skill,
-    effects: (skill.targetEffects ?? skill.effects ?? []).map((effect, index) => combatEffect(effect, "skill", id, index, skillIdByName)),
-  }]));
+  return Object.fromEntries([...catalog.skills].map(([id, skill]) => {
+    const initiative = initiativeAttributeBinding(skill, repository, root);
+    return [id, {
+      ...skill,
+      attributeFormula: { ...(skill.attributeFormula ?? {}), ...(initiative ? { initiative } : {}) },
+      effects: (skill.targetEffects ?? skill.effects ?? []).map((effect, index) => combatEffect(effect, "skill", id, index, skillIdByName)),
+    }];
+  }));
 }
 
 /** 将本次调用物品及其套装的目标效果固化进方案快照。 */
@@ -424,7 +447,7 @@ export function createDungeonExploration({ repository, catalog, root = process.c
       const battleInput = {
         initialState,
         battlePlans,
-        skills: battleSkillDefinitions(catalog),
+        skills: battleSkillDefinitions(catalog, repository, root),
         skillIds: [...catalog.skills.keys()],
         rulesetVersion: RULESET_VERSION,
         contentVersion: catalog.contentVersion,
@@ -531,7 +554,7 @@ function prepareContext({ repository, catalog, heroId, dungeonId, planName }) {
 
   const heroSkills = repository.listHeroSkills(heroId);
   const skillIds = [...new Set([...heroSkills.map((entry) => entry.skill_id), ...catalog.skills.keys()])];
-  const allBattleSkills = battleSkillDefinitions(catalog);
+  const allBattleSkills = battleSkillDefinitions(catalog, repository);
   const skills = {};
   for (const id of skillIds) {
     const definition = allBattleSkills[id];

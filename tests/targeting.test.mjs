@@ -12,10 +12,20 @@ import {
 } from "../game/domain/positions.mjs";
 import { enumerateCandidates, selectTargets, targetPositionPriority, stableWithinPositionPolicy } from "../game/targeting/select.mjs";
 import { createRandomStream } from "../game/policies/random.mjs";
+import { parseMaxTargetsFormula, resolveMaxTargets } from "../game/domain/skill.mjs";
 
 function unit(id, side, position, extra = {}) {
   return { id, name: id, side, position, alive: true, present: true, kind: "hero", ...extra };
 }
+
+test("动态目标上限按英雄或技能实时等级计算", () => {
+  const byHero = parseMaxTargetsFormula("2 +10%×英雄等级");
+  assert.deepEqual(byHero, { base: 2, terms: [{ scale: "heroLevel", ratio: 10 }], rawText: "2 +10%×英雄等级" });
+  assert.equal(resolveMaxTargets({ maxTargets: 2, maxTargetsFormula: byHero }, { heroLevel: 40 }), 6);
+  assert.equal(resolveMaxTargets({ maxTargets: 2, maxTargetsFormula: byHero }, { heroLevel: 39 }), 5);
+  const bySkill = parseMaxTargetsFormula("1 +25% x 技能等级");
+  assert.equal(resolveMaxTargets({ maxTargetsFormula: bySkill }, { skillLevel: 12 }), 4);
+});
 
 test("六个站位与中文显示名", () => {
   assert.deepEqual(POSITIONS, ["front", "leftWing", "rightWing", "center", "rear", "enemyRear"]);
@@ -169,6 +179,27 @@ test("候选过滤：同阵营、倒下、召唤物开关", () => {
     attackType: "近战",
   });
   assert.deepEqual(allies.candidates.map((candidate) => candidate.id), ["ally"]);
+});
+
+test("同一位置的队友包含施法者本人（威势：鼓舞战吼 单体前排也能释放）", () => {
+  const solo = [unit("actor", "attacker", "front"), unit("enemy", "defender", "front")];
+  const alone = selectTargets({
+    actor: solo[0], units: solo,
+    spec: { side: "ally", mode: "samePositionAoE", maxTargets: 2, allowSummons: true },
+    configuredPriority: ["front"],
+    withinPositionPolicy: stableWithinPositionPolicy,
+  });
+  assert.deepEqual(alone.targets.map((target) => target.id), ["actor"], "前排只有自己时也必须能找到目标");
+
+  const withAllies = [...solo, unit("ally-front", "attacker", "front"), unit("ally-rear", "attacker", "rear")];
+  const group = selectTargets({
+    actor: withAllies[0], units: withAllies,
+    spec: { side: "ally", mode: "samePositionAoE", maxTargets: 2, allowSummons: true },
+    configuredPriority: ["front"],
+    withinPositionPolicy: stableWithinPositionPolicy,
+  });
+  assert.deepEqual(group.targets.map((target) => target.id), ["actor", "ally-front"], "同位置的队友（含自己）都在候选里");
+  assert.equal(group.position, "front");
 });
 
 test("己方全体覆盖施法者以及所有己方单位", () => {

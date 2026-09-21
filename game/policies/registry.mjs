@@ -3,7 +3,7 @@
 // 所有 C、D 级规则必须通过策略接口隔离，并能在界面或诊断中标注实验状态。
 // 这里集中列出当前实现的所有策略及其证据等级，供测试与诊断使用。
 
-import { meanRollPolicy, createUniformRollPolicy } from "./roll.mjs";
+import { meanRollPolicy, createDiceRollPolicy, createUniformRollPolicy } from "./roll.mjs";
 import { DEFAULT_DECAY_POLICY, createLinearDecayPolicy, noDecayPolicy, stableTieBreakPolicy, randomTieBreakPolicy } from "./initiative.mjs";
 import { floorRoundingPolicy, roundHalfUpPolicy } from "../formulas/calculation.mjs";
 import { zeroReductionPolicy, createLinearReductionPolicy, DEFAULT_DAMAGE_PIPELINE, zeroHitGradePercents } from "../formulas/damage-pipeline.mjs";
@@ -27,6 +27,7 @@ export const POLICY_REGISTRY = [
   { id: "rounding:floor", evidenceLevel: "B", experimental: false, description: "使用时向下取整", ruleQuestionId: "rounding-points", impl: floorRoundingPolicy },
   { id: "rounding:round-half-up", evidenceLevel: "D", experimental: true, description: "四舍五入对照实现", ruleQuestionId: "rounding-points", impl: roundHalfUpPolicy },
   { id: "roll:mean", evidenceLevel: "C", experimental: false, description: "直接返回平均值，用于确定性断言", ruleQuestionId: "random-roll-distribution", impl: meanRollPolicy },
+  { id: "roll:wod-dice-pool-int", evidenceLevel: "C", experimental: true, description: "最多 6 颗主骰加 1 颗副骰的 0 起始奇数面骰池", ruleQuestionId: "random-roll-distribution", impl: createDiceRollPolicy() },
   { id: "roll:uniform-0-2mean", evidenceLevel: "D", experimental: true, description: "在 [0, 2 × 平均值] 上均匀投点", ruleQuestionId: "random-roll-distribution", impl: createUniformRollPolicy() },
   { id: "decay:wod-block-32", evidenceLevel: "C", experimental: false, description: "战报验证的 32 步循环多行动先攻衰减", ruleQuestionId: "multi-action-initiative-decay", impl: DEFAULT_DECAY_POLICY },
   { id: "decay:linear-decay-0.5", evidenceLevel: "D", experimental: true, description: "旧版多次行动线性衰减对照", ruleQuestionId: "multi-action-initiative-decay", impl: createLinearDecayPolicy() },
@@ -38,7 +39,7 @@ export const POLICY_REGISTRY = [
   { id: "armor:linear-reduction", evidenceLevel: "D", experimental: true, description: "护甲/抵抗线性减免实验实现", ruleQuestionId: "armor-resistance-formula", impl: createLinearReductionPolicy() },
   { id: "pipeline:wod-textbook-v1", evidenceLevel: "B", experimental: false, description: "教材伤害管线顺序", ruleQuestionId: "damage-order-z-item-global", impl: DEFAULT_DAMAGE_PIPELINE },
   { id: "hitGrade:zero-percents", evidenceLevel: "D", experimental: true, description: "命中等级伤害修正全为 0", ruleQuestionId: "damage-order-z-item-global", impl: zeroHitGradePercents },
-  { id: "failureCost:default-failure-cost", evidenceLevel: "D", experimental: true, description: "结构性失败不消耗行动", ruleQuestionId: "failed-attempt-cost", impl: defaultFailureCostPolicy },
+  { id: "failureCost:default-failure-cost", evidenceLevel: "D", experimental: true, description: "结构性失败不消耗行动；主回合一整圈都无可执行指令算本次行动失败并消耗行动点（无法执行任何行动）", ruleQuestionId: "failed-attempt-cost", impl: defaultFailureCostPolicy },
   { id: "woundThreshold:default-wound-thresholds", evidenceLevel: "D", experimental: true, description: "轻伤 90% / 受伤 60% / 重伤 30%", ruleQuestionId: "wound-thresholds", impl: defaultWoundThresholdPolicy },
   { id: "healingPriority:default-healing-priority", evidenceLevel: "D", experimental: true, description: "治疗触发器 1 至 5 优先级，英雄优先", ruleQuestionId: "healing-formula", impl: defaultHealingPriorityPolicy },
   { id: "withinPosition:random-within-position", evidenceLevel: "D", experimental: true, description: "站位内随机排序", ruleQuestionId: "within-position-order", impl: randomWithinPositionPolicy },

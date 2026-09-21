@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { STARTER_SKILLS, STARTER_ITEMS } from "../gamedata/overrides/starter-content.mjs";
+import { parseMaxTargetsFormula } from "../game/domain/skill.mjs";
 
 function readJson(path) {
   if (!existsSync(path)) return null;
@@ -39,7 +40,11 @@ function normalizeAllowSummons(target) {
 /** 统一 ETL 与人工校正记录的字段形状，保证引擎可以无条件读取。 */
 function normalizeSkill(skill, extraWarnings) {
   const warnings = [...(skill.warnings ?? skill.meta?.warnings ?? [])];
-  const target = normalizeAllowSummons(skill.target);
+  let target = normalizeAllowSummons(skill.target);
+  const formulaWarning = warnings.find((warning) => String(warning).startsWith("target:max-count-modifier-not-represented:"));
+  const rawFormula = /^target:max-count-modifier-not-represented:"(.*)"$/.exec(String(formulaWarning ?? ""))?.[1];
+  const maxTargetsFormula = skill.target?.maxTargetsFormula ?? parseMaxTargetsFormula(rawFormula ?? "");
+  if (target && maxTargetsFormula) target = { ...target, maxTargetsFormula };
   if (target?.allowSummonsCorrected) warnings.push("target-allow-summons-corrected");
   if (!skill.baseType) warnings.push("base-type-missing");
   if (extraWarnings) warnings.push(...extraWarnings);

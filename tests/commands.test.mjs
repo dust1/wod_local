@@ -4,7 +4,9 @@ import {
   CommandCursor,
   defaultFailureCostPolicy,
   interpretMainCommands,
+  FAILURE_REASONS,
   FAILURE_REASON_LABELS,
+  isActionLevelFailure,
 } from "../game/commands/cursor.mjs";
 import {
   createBattlePlan,
@@ -68,6 +70,30 @@ test("oncePerBattle 每场战斗最多成功执行一次", () => {
   assert.deepEqual(cursor.isExecutable(cursor.current()), { executable: false, reason: "oncePerBattleExhausted" });
   cursor.record({ ok: false, reason: "oncePerBattleExhausted" });
   assert.equal(cursor.current().id, "other");
+});
+
+test("行动级失败原因可被识别，并有对应文案", () => {
+  assert.equal(FAILURE_REASON_LABELS.noUsableCommand, "无法执行任何行动");
+  assert.equal(FAILURE_REASON_LABELS.noCommands, "没有配置指令");
+  assert.equal(isActionLevelFailure("noUsableCommand"), true);
+  assert.equal(isActionLevelFailure("noCommands"), true);
+  assert.equal(isActionLevelFailure("noTargets"), false);
+  assert.ok(FAILURE_REASONS.includes("noUsableCommand"));
+});
+
+test("skip 只推进游标，不消耗行动也不计入成功次数", () => {
+  const cursor = new CommandCursor([
+    { id: "expensive", skillId: "guard", repeat: "normal" },
+    { id: "cheap", skillId: "slash", repeat: "normal" },
+  ]);
+  const result = cursor.skip();
+  assert.deepEqual(result, { advanced: true, consumedAction: false });
+  assert.equal(cursor.attempts, 0, "跳过不是一次尝试");
+  assert.equal(cursor.current().id, "cheap", "预检不通过的指令顺位到下一条");
+  assert.equal(cursor.successCount("expensive"), 0);
+  cursor.skip();
+  assert.equal(cursor.current().id, "expensive");
+  assert.equal(cursor.wrapped, 1);
 });
 
 test("repeatWhilePossible 成功时保持当前指令，失败时跳到下一条", () => {

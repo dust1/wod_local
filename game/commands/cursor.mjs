@@ -8,6 +8,17 @@
 //
 // “尝试失败是否消耗行动”对不同失败原因可能不同，当前资料没有完整定义，
 // 因此返回结构化失败原因并由规则策略决定（FailureCostPolicy）。
+//
+// 注意：引擎在调用技能**之前**就会做预检（同源效果仍在生效、法力不足等）。
+// 预检不通过的指令根本不会发起调用，用 skip() 推进游标即可，不经过失败策略；
+// 失败策略只用于真正执行过、但结果失败的指令。
+//
+// 主回合的一次行动最多检查一整圈指令（`commands.length` 步）：
+//   - 中途找到能执行的指令 → 按它执行，本次行动结束；
+//   - 一整圈都没有任何指令能执行（预检跳过、没有合法目标、一次性已用尽……）
+//     → 本次行动判定为失败（noUsableCommand「无法执行任何行动」）并消耗行动点。
+// “一整圈”的次数由调用方的循环统计：游标可能从中途开始，本身无法只凭
+// 是否绕过末尾判断一整圈是否走完，因此不放在 skip() 里。
 
 import { WAIT_COMMAND_SKILL_ID } from "./battle-plan.mjs";
 
@@ -22,6 +33,7 @@ export const FAILURE_REASONS = Object.freeze([
   "noCharges",
   "cannotUseTiming",
   "noCommands",
+  "noUsableCommand",
   "battleEnded",
 ]);
 
@@ -36,8 +48,20 @@ export const FAILURE_REASON_LABELS = Object.freeze({
   noCharges: "没有剩余次数",
   cannotUseTiming: "该阶段不能使用",
   noCommands: "没有配置指令",
+  noUsableCommand: "无法执行任何行动",
   battleEnded: "战斗已结束",
 });
+
+/**
+ * 行动级失败原因：这些失败描述的是「这次行动整体没做成」，
+ * 而不是某一次技能调用的结果，因此战报把它们渲染成
+ * 「{角色名称} {失败文案}」这一行（不显示技能、物品与目标）。
+ */
+export const ACTION_LEVEL_FAILURE_REASONS = Object.freeze(["noCommands", "noUsableCommand"]);
+
+export function isActionLevelFailure(reason) {
+  return ACTION_LEVEL_FAILURE_REASONS.includes(reason);
+}
 
 /**
  * 失败代价策略：未定义的部分全部显式标注为实验性。
@@ -122,6 +146,20 @@ export class CommandCursor {
     // 失败一律跳到下一条；normal 与 repeatWhilePossible 的差别体现在成功分支
     this.#advance();
     return { advanced: true, consumedAction, reason };
+  }
+
+  /**
+   * 预检不通过、根本没有发起调用的指令：只推进游标，不消耗行动，也不计入尝试次数。
+   *
+   * 用于「同源效果仍在生效」「法力不足」这类可以顺位到下一条指令的空操作；
+   * 与 record({ ok: false }) 的区别是不走失败代价策略，因此不会误导调用方
+   * 把这次跳过当成一次失败的尝试。
+   *
+   * @returns {{advanced: true, consumedAction: false}}
+   */
+  skip() {
+    this.#advance();
+    return { advanced: true, consumedAction: false };
   }
 
   #advance() {

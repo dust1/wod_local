@@ -258,10 +258,10 @@ test("伤害管线按顺序记录每一步诊断", () => {
     globalPercents: [20],
     armorPolicy: { id: "half", experimental: true, reduce: (value) => ({ value: value / 2, applied: value / 2 }) },
   });
-  // (10 + 2 预投) = 12 → +3 固定 = 15 → ×1.5 = 22.5 → +4 z = 26.5
-  // → 重击 ×2 = 53 → 护甲减半 = 26.5 → ×1.2 = 31.8
-  assert.ok(Math.abs(result.exact - 31.8) < 1e-12, `精确值应为 31.8，实际 ${result.exact}`);
-  assert.equal(result.applied, 31);
+  // 公式平均值 10 ×1.5 = 15 → 投点（未注入策略时取平均值）
+  // → +2/+3 固定 = 20 → +4 z = 24 → 重击 ×2 = 48 → 护甲减半 = 24 → ×1.2 = 28.8
+  assert.ok(Math.abs(result.exact - 28.8) < 1e-12, `精确值应为 28.8，实际 ${result.exact}`);
+  assert.equal(result.applied, 28);
   assert.equal(result.diagnostics.preRollFlat, 2);
   assert.equal(result.diagnostics.postRollFlatTotal, 3);
   assert.equal(result.diagnostics.zTotal, 4);

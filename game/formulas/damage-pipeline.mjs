@@ -113,8 +113,12 @@ export function resolveDamage(input = {}, options = {}) {
   const preRollFlat = sumBy(flats, (entry) => (entry.timing ?? "postRoll") === "preRoll");
   if (preRollFlat !== 0) steps.push(calculationStep("投点前固定伤害加值", preRollFlat));
 
-  // 2. 随机伤害投点
-  const rollBase = meanExact + preRollFlat;
+  // 2. 公式平均值先受百分比修正，然后投点。
+  // 固定加值不进入骰池，在投点后追加。
+  const percentValues = (input.percents ?? []).map((entry) => Number(entry.value ?? 0));
+  const percentMul = percentMultiplier(percentValues);
+  if (percentValues.length > 0) steps.push(calculationStep("常规伤害百分比倍率", percentMul, `×${percentMul}`));
+  const rollBase = meanExact * percentMul;
   const rollPolicy = input.rollPolicy ?? options.rollPolicy;
   let rolled = rollBase;
   if (rollPolicy) {
@@ -134,13 +138,7 @@ export function resolveDamage(input = {}, options = {}) {
     steps.push(calculationStep(`固定伤害加值 ${entry.source ?? ""}`.trim(), entry.value));
   }
   const postRollFlatTotal = sumBy(postRollFlats, () => true);
-  const afterFlats = rolled + postRollFlatTotal;
-
-  // 4. 常规伤害百分比
-  const percentValues = (input.percents ?? []).map((entry) => Number(entry.value ?? 0));
-  const percentMul = percentMultiplier(percentValues);
-  if (percentValues.length > 0) steps.push(calculationStep("常规伤害百分比倍率", percentMul, `×${percentMul}`));
-  const afterPercent = afterFlats * percentMul;
+  const afterFlats = rolled + preRollFlat + postRollFlatTotal;
 
   // 5. z 类型伤害追加：只有本次攻击确实产生该类型伤害时生效
   const producedTypes = new Set(input.damageTypes ?? []);
@@ -149,7 +147,7 @@ export function resolveDamage(input = {}, options = {}) {
   for (const entry of zEntries) {
     steps.push(calculationStep(`z 伤害追加 ${entry.damageType} ${entry.source ?? ""}`.trim(), entry.value));
   }
-  const afterZ = afterPercent + zTotal;
+  const afterZ = afterFlats + zTotal;
 
   // 6. 命中等级伤害修正
   const hitGrade = input.hitGrade ?? "命中";

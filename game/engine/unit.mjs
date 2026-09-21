@@ -117,11 +117,16 @@ export function deriveUnit(unit, options = {}) {
   const actionsExact = applyModifierPipeline(baseStats.actionsPerRound, { modifiers: actionMods }).exact;
 
   const initiativeMods = modifiersForTarget(allModifiers, { type: "derived", key: "initiative" });
-  const initiativeBase = calculatedFromBaseStat(baseStats.initiative, baseStats.traces.initiative, roundingPolicy);
-  const initiativeExact = applyModifierPipeline(initiativeBase.exact, {
+  const initiativeFormulaBase = appliedAttributes.agility * 2 + appliedAttributes.perception;
+  const initiativeBase = calculatedFromBaseStat(initiativeFormulaBase, baseStats.traces.initiative, roundingPolicy);
+  const initiativePipeline = applyModifierPipeline(initiativeBase.exact, {
     modifiers: initiativeMods,
     context: { heroLevel: unit.level },
-  }).exact;
+  });
+  // 先攻的公式部分先受百分比修正并进入骰池；直接固定加值在投点后追加。
+  const initiativeRollMean = initiativeFormulaBase * initiativePipeline.percentMultiplier * initiativePipeline.globalMultiplier;
+  const initiativeHardBonus = baseStats.initiativeBonus + initiativePipeline.flatTotal;
+  const initiativeExact = initiativeRollMean + initiativeHardBonus;
 
   const capacity = (key, baseKey) => Math.max(0, Math.floor(applyModifierPipeline(baseStats[baseKey], {
     modifiers: modifiersForTarget(allModifiers, { type: "slotCapacity", key }),
@@ -140,13 +145,16 @@ export function deriveUnit(unit, options = {}) {
     actions: actionsFromExact(actionsExact, roundingPolicy),
     initiativeExact,
     initiative: Math.floor(initiativeExact),
+    initiativeRollMean,
+    initiativeHardBonus,
+    initiativePercentMultiplier: initiativePipeline.percentMultiplier * initiativePipeline.globalMultiplier,
     pocketSlots: capacity("pocket", "pocketSlots"),
     ringSlots: capacity("ring", "ringSlots"),
     medalSlots: capacity("medal", "medalSlots"),
     traces: {
       healthMax: { ...healthMaxResult, exact: healthMaxFinal.exact, steps: [...healthMaxResult.steps, ...healthMaxFinal.steps] },
       manaMax: { ...manaMaxResult, exact: manaMaxFinal.exact, steps: [...manaMaxResult.steps, ...manaMaxFinal.steps] },
-      initiative: { exact: initiativeExact, steps: initiativeBase.steps },
+      initiative: { exact: initiativeExact, steps: [...initiativeBase.steps, ...initiativePipeline.steps] },
     },
   };
 }
@@ -187,6 +195,7 @@ export function skillMeans(unit, skill, options = {}) {
   const attackBinding = skill.attributeFormula?.attack;
   const defenseBinding = skill.attributeFormula?.defense;
   const damageBinding = skill.attributeFormula?.damage;
+  const initiativeBinding = skill.attributeFormula?.initiative;
   return {
     skillLevel: level,
     attackMean: attackBinding
@@ -197,6 +206,9 @@ export function skillMeans(unit, skill, options = {}) {
       : null,
     damageMean: damageBinding
       ? damageMean({ primary: pick(damageBinding), secondary: derived.attributes[damageBinding.secondary] ?? 0, skillLevel: level }, options)
+      : null,
+    initiativeMean: initiativeBinding
+      ? skillRollMean({ primary: pick(initiativeBinding), secondary: derived.attributes[initiativeBinding.secondary] ?? 0, skillLevel: level }, options)
       : null,
   };
 }

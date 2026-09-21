@@ -1,6 +1,7 @@
 // 事件 → 中文战报文本。设计文档 §18、§20.1。
 // 渲染器不得决定战斗结果，只消费事件。
 import { PHASE_LABELS } from "../domain/phases.mjs";
+import { isActionLevelFailure } from "../commands/cursor.mjs";
 
 function number(value) {
   if (value === undefined || value === null) return "";
@@ -20,7 +21,10 @@ export function renderEvent(ev) {
     case "SkillAttempted":
       return { phase: "行动", text: `${ev.actorName} 尝试使用 ${ev.skillName}${ev.manaCost ? `（${number(ev.manaCost)} 法力）` : ""}。` };
     case "SkillFailed":
-      return { phase: "行动", text: `${ev.actorName} 使用 ${ev.skillName} 失败：${ev.reasonLabel ?? ev.reason}。` };
+      // 行动级失败没有具体技能调用，直接渲染成「{角色名} {失败文案}」。
+      return isActionLevelFailure(ev.reason)
+        ? { phase: "行动", text: `${ev.actorName} ${ev.reasonLabel ?? ev.reason}。` }
+        : { phase: "行动", text: `${ev.actorName} 使用 ${ev.skillName} 失败：${ev.reasonLabel ?? ev.reason}。` };
     case "ResourceSpent":
       return { phase: "消耗", text: `${ev.actorName} 消耗 ${number(ev.amount)} ${ev.resourceLabel ?? "法力"}。` };
     case "ResourceChanged":

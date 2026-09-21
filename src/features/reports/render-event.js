@@ -1,10 +1,15 @@
 // 客户端只做展示文本拼装，不参与任何战斗判定。
+import { isActionLevelFailure } from "../../../game/commands/cursor.mjs";
+
 export function renderOne(event) {
   const map = {
     RoundStarted: `第 ${event.round} 回合开始。`,
     StatusSnapshot: `${event.sideLabel ?? ""} ${event.name}（等级 ${event.level}，${event.positionLabel}）体力 ${event.health}/${event.healthMax}，${event.resourceLabel} ${event.resource}，${event.wounds}`,
     SkillAttempted: `${event.actorName} 尝试使用 ${event.skillName}。`,
-    SkillFailed: `${event.actorName} 使用 ${event.skillName} 失败：${event.reasonLabel ?? event.reason}。`,
+    // 行动级失败没有具体技能调用，直接显示「{角色名} {失败文案}」。
+    SkillFailed: isActionLevelFailure(event.reason)
+      ? `${event.actorName} ${event.reasonLabel ?? event.reason}。`
+      : `${event.actorName} 使用 ${event.skillName} 失败：${event.reasonLabel ?? event.reason}。`,
     ResourceSpent: `${event.actorName} 消耗 ${event.amount} ${event.resourceLabel ?? "法力"}。`,
     ResourceChanged: `${event.actorName} ${event.delta >= 0 ? "恢复" : "流失"} ${Math.abs(event.delta)} ${event.resourceLabel ?? "体力"}。`,
     InitiativeRolled: `${event.actorName} 投出先攻 ${event.initiative}${event.skillName ? `（${event.skillName}）` : ""}。`,

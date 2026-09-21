@@ -9,6 +9,7 @@ import { createUnit, deriveUnit, effectiveSkillLevelOf } from "../game/engine/un
 import { EffectLedger } from "../game/domain/effect.mjs";
 import { manaCostValue } from "../game/formulas/mana-cost.mjs";
 import { createDisplayBattleReport } from "../game/events/display-report.mjs";
+import { createBattlePlan } from "../game/commands/battle-plan.mjs";
 
 const HERO_ATTRIBUTES = {
   strength: 8, constitution: 9, intelligence: 4, dexterity: 12,
@@ -146,6 +147,61 @@ test("先攻队列降序执行，且第 n 动与总动数正确关联", () => {
       assert.equal(entries[index].ordinal, entries[index - 1].ordinal + 1);
     }
   }
+});
+
+test("先攻技能按出手速度属性计算先攻，不进入攻击命中流程", () => {
+  const initiativeSkill = {
+    id: "battle-cry-initiative",
+    name: "行动：战吼",
+    baseType: "initiative",
+    timing: { preRound: false, mainAction: false, initiative: true, reactiveDefense: false, passive: false },
+    target: { side: "ally", mode: "self", maxTargets: 1, allowSummons: false },
+    attributeFormula: { initiative: { primary: "strength", secondary: "agility" } },
+    manaCost: null,
+    effects: [{
+      id: "battle-cry-buff",
+      name: "战吼加速",
+      duration: { kind: "untilBattleEnd" },
+      modifiers: [{ kind: "flat", value: 3, target: { type: "derived", key: "initiative" } }],
+    }],
+  };
+  const ledger = new EffectLedger();
+  const result = simulateBattle({
+    initialState: {
+      battleId: "initiative-skill",
+      floorNumber: 1,
+      units: [heroUnit({ skills: { "battle-cry-initiative": { baseLevel: 4 } }, mana: 100 }), monsterUnit({ health: 9999 })],
+      preRoundOrder: [],
+    },
+    battlePlans: plans({
+      initiativeSkillId: "battle-cry-initiative",
+      initiativeItemIds: ["war-drum"],
+      initiativeCalledItems: [{ id: "war-drum", name: "战鼓" }],
+      initiativeItemEffects: [{
+        id: "war-drum-effect",
+        name: "战鼓激励",
+        sourceKind: "item",
+        sourceId: "war-drum",
+        duration: { kind: "untilBattleEnd" },
+        modifiers: [{ kind: "flat", value: 2, target: { type: "attribute", key: "strength" } }],
+      }],
+      preRound: [],
+    }),
+    skills: { ...STARTER_SKILL_BY_ID, "battle-cry-initiative": initiativeSkill },
+    effectLedger: ledger,
+    randomSeed: "initiative-skill-seed",
+    maxRounds: 1,
+    contentVersion: "starter-content",
+  });
+  const rolled = result.events.find((event) => event.type === "InitiativeRolled" && event.actorId === "hero-1");
+  const expectedMean = HERO_ATTRIBUTES.strength * 2 + HERO_ATTRIBUTES.agility + 4 * 2;
+  assert.equal(rolled.initiativeMean, expectedMean);
+  assert.ok(rolled.initiative >= 0 && rolled.initiative <= expectedMean * 2, `先攻投点 ${rolled.initiative} 超出 [0, ${expectedMean * 2}]`);
+  assert.equal(result.events.some((event) => event.type === "AttackRolled" && event.actorId === "hero-1" && event.phase === "InitiativeSkillsExecuted"), false);
+  assert.ok(result.events.some((event) => event.type === "InitiativeSkillCalculated" && event.actorId === "hero-1"));
+  const buff = ledger.instances.find((instance) => instance.sourceSkillId === "battle-cry-initiative");
+  assert.ok(buff, "先攻技能的目标效果应作为 Buff 附加");
+  assert.ok(buff.components.some((component) => component.sourceKind === "item" && component.sourceId === "war-drum"), "先攻技能调用物品的目标效果应并入同一 Buff");
 });
 
 test("同一规则版本与种子产生完全相同的事件序列", () => {
@@ -313,7 +369,9 @@ test("回合前效果影响当前回合的回复与先攻", () => {
 
 test("同源效果不重复附加并产生诊断", () => {
   const result = run({
-    maxRounds: 3,
+    // 守势覆盖当前回合与下一回合；只检查其首次到期前的重复施放。
+    // 第 3 回合到期后重新施放属于合法行为，不能依赖随机伤害让战斗提前结束。
+    maxRounds: 2,
     battlePlans: plans({ preRound: [{ skillId: "guard-stance" }] }),
     hero: { mana: 100 },
   });
@@ -321,7 +379,7 @@ test("同源效果不重复附加并产生诊断", () => {
   assert.equal(appliedCount, 1, "同一技能同目标未结束前不得重复附加");
 });
 
-test("同源重复尝试在战报中不会把首次成功行动标成失败", () => {
+test("同源 Buff 仍生效时跳过该指令：不产生事件、不消耗行动，直接执行下一条", () => {
   const lastingBuff = {
     ...STARTER_SKILL_BY_ID["guard-stance"],
     timing: { preRound: false, mainAction: true, initiative: false, reactiveDefense: false, passive: false },
@@ -330,12 +388,12 @@ test("同源重复尝试在战报中不会把首次成功行动标成失败", ()
   };
   const result = simulateBattle({
     initialState: {
-      battleId: "same-source-report",
+      battleId: "same-source-skip",
       floorNumber: 1,
       units: [
         heroUnit({
           skills: { "guard-stance": { baseLevel: 4 } },
-          baseStatDefaults: { actionsPerRound: 2 },
+          baseStatDefaults: { actionsPerRound: 3 },
           mana: 100,
         }),
         monsterUnit(),
@@ -344,13 +402,24 @@ test("同源重复尝试在战报中不会把首次成功行动标成失败", ()
     },
     battlePlans: plans({
       preRound: [],
-      mainRound: [{ id: "lasting-buff", skillId: "guard-stance", repeat: "normal" }],
+      mainRound: [
+        { id: "lasting-buff", skillId: "guard-stance", repeat: "normal" },
+        { id: "attack", skillId: "basic-swordsmanship", repeat: "normal" },
+      ],
     }),
     skills: { ...STARTER_SKILL_BY_ID, "guard-stance": lastingBuff },
-    randomSeed: "same-source-report-seed",
+    randomSeed: "same-source-skip-seed",
     maxRounds: 1,
     contentVersion: "starter-content",
   });
+
+  // 第 1 动施放 Buff，第 2 动攻击，第 3 动本会重复施放 Buff —— 该次调用是空操作，
+  // 必须被跳过并且不消耗行动，于是第 3 动继续执行下一条（攻击）。
+  const attempts = result.events.filter((event) => event.type === "SkillAttempted" && event.actorId === "hero-1").map((event) => event.skillId);
+  assert.deepEqual(attempts, ["guard-stance", "basic-swordsmanship", "basic-swordsmanship"], "空操作不应占掉行动");
+  assert.equal(result.events.filter((event) => event.type === "SkillFailed" && event.actorId === "hero-1").length, 0, "跳过的调用不应产生失败事件");
+  assert.equal(result.events.filter((event) => event.type === "EffectApplied" && event.sourceSkillId === "guard-stance").length, 1, "同一技能同目标未结束前不得重复附加");
+
   const report = createDisplayBattleReport({
     dungeonName: "测试地城",
     battleName: "测试战斗",
@@ -360,9 +429,8 @@ test("同源重复尝试在战报中不会把首次成功行动标成失败", ()
     events: result.events,
   });
   const heroActions = report.rounds[0].mainRound.filter((action) => action.actor.id === "hero-1");
-  assert.equal(heroActions.length, 2);
+  assert.deepEqual(heroActions.map((action) => action.skill.id), ["guard-stance", "basic-swordsmanship", "basic-swordsmanship"]);
   assert.equal(heroActions[0].failure, null, "首次施放已成功，不应被后续失败事件覆盖");
-  assert.deepEqual(heroActions[1].failure, { reason: "sameSourceActive", reasonLabel: "同源效果仍在生效" });
 });
 
 test("法力消耗按实时技能等级计算并扣除", () => {
@@ -377,16 +445,66 @@ test("法力消耗按实时技能等级计算并扣除", () => {
   assert.equal(spent.trace.applied, spent.amount);
 });
 
-test("法力不足的技能尝试发出失败事件且不选择目标或施加 Buff", () => {
+test("付不起法力的指令被跳过：不产生事件、不扣法力、不消耗行动", () => {
   const result = run({
     maxRounds: 1,
     battlePlans: plans({ preRound: [{ id: "guard", skillId: "guard-stance", repeat: "normal" }] }),
     hero: { mana: 0 },
   });
-  const failed = result.events.find((event) => event.type === "SkillFailed" && event.skillId === "guard-stance");
-  assert.deepEqual({ reason: failed?.reason, reasonLabel: failed?.reasonLabel }, { reason: "insufficientMana", reasonLabel: "法力不足" });
+  assert.equal(result.events.some((event) => event.type === "SkillAttempted" && event.skillId === "guard-stance"), false, "预检不通过不应发起调用");
+  assert.equal(result.events.some((event) => event.type === "SkillFailed" && event.skillId === "guard-stance"), false, "不再出现“失败：法力不足”提示");
   assert.equal(result.events.some((event) => event.type === "TargetSelected" && event.actorId === "hero-1" && event.phase === "PreRoundCommandsExecuted"), false);
   assert.equal(result.events.some((event) => event.type === "EffectApplied" && event.actorId === "hero-1" && event.phase === "PreRoundCommandsExecuted"), false);
+  assert.equal(result.events.some((event) => event.type === "ResourceSpent" && event.reason === "skillCost"), false, "跳过的指令不应扣法力");
+});
+
+test("法力不足的指令顺位跳过，后续行动一直使用付得起的那条（不再交替出现失败）", () => {
+  // report 66 的场景：威势：战争怒吼 消耗 31 点法力但角色只有 27，
+  // 于是第 1 动失败、第 2 动破盾攻击，来回交替。正确行为是每动都直接使用破盾攻击。
+  const expensive = {
+    ...STARTER_SKILL_BY_ID["guard-stance"],
+    id: "expensive-warcry",
+    name: "威势：战争怒吼",
+    timing: { preRound: false, mainAction: true, initiative: false, reactiveDefense: false, passive: false },
+    manaCost: { standard: 8, display: 8 },
+    effects: STARTER_SKILL_BY_ID["guard-stance"].effects.map((effect) => ({ ...effect, duration: { kind: "untilBattleEnd" } })),
+  };
+  const result = simulateBattle({
+    initialState: {
+      battleId: "mana-skip",
+      floorNumber: 1,
+      units: [heroUnit({ baseStatDefaults: { actionsPerRound: 2 }, mana: 1, manaRegeneration: 3 }), monsterUnit({ health: 9999 })],
+      preRoundOrder: [],
+    },
+    battlePlans: plans({
+      preRound: [],
+      mainRound: [
+        { id: "warcry", skillId: "expensive-warcry", repeat: "normal" },
+        { id: "attack", skillId: "basic-swordsmanship", repeat: "normal" },
+      ],
+    }),
+    skills: { ...STARTER_SKILL_BY_ID, "expensive-warcry": expensive },
+    randomSeed: "mana-skip-seed",
+    maxRounds: 1,
+    contentVersion: "starter-content",
+  });
+
+  const attempts = result.events.filter((event) => event.type === "SkillAttempted" && event.actorId === "hero-1").map((event) => event.skillId);
+  assert.deepEqual(attempts, ["basic-swordsmanship", "basic-swordsmanship"], "两次行动都顺位到付得起的技能，而不是交替失败");
+  assert.equal(result.events.filter((event) => event.type === "SkillFailed" && event.actorId === "hero-1").length, 0, "跳过的指令不应产生失败事件");
+  assert.equal(result.events.some((event) => event.type === "ResourceSpent" && event.skillId === "expensive-warcry"), false);
+
+  const report = createDisplayBattleReport({
+    dungeonName: "测试地城",
+    battleName: "测试战斗",
+    result: result.finalState.result,
+    roundCount: result.finalState.round,
+    levelNumber: 1,
+    events: result.events,
+  });
+  const heroActions = report.rounds[0].mainRound.filter((action) => action.actor.id === "hero-1");
+  assert.deepEqual(heroActions.map((action) => action.skill.name), ["基础：剑术", "基础：剑术"]);
+  assert.deepEqual(heroActions.map((action) => action.failure), [null, null]);
 });
 
 test("战斗文本渲染不决定结果", () => {
@@ -470,6 +588,54 @@ test("没有显式方案的单位使用确定性兜底方案并实际行动", ()
   assert.equal(result.events.some((ev) => ev.type === "SkillFailed" && ev.reason === "noCommands"), false);
 });
 
+test("一圈都不可用时本次行动失败并消耗行动点，战报显示「无法执行任何行动」", () => {
+  const lastingBuff = {
+    ...STARTER_SKILL_BY_ID["guard-stance"],
+    timing: { preRound: false, mainAction: true, initiative: false, reactiveDefense: false, passive: false },
+    manaCost: null,
+    effects: STARTER_SKILL_BY_ID["guard-stance"].effects.map((effect) => ({ ...effect, duration: { kind: "untilBattleEnd" } })),
+  };
+  const result = simulateBattle({
+    initialState: {
+      battleId: "no-usable-command",
+      floorNumber: 1,
+      units: [heroUnit({ skills: { "guard-stance": { baseLevel: 4 } }, baseStatDefaults: { actionsPerRound: 3 }, mana: 100 }), monsterUnit({ health: 9999 })],
+      preRoundOrder: [],
+    },
+    battlePlans: plans({ preRound: [], mainRound: [{ id: "lasting-buff", skillId: "guard-stance", repeat: "normal" }] }),
+    skills: { ...STARTER_SKILL_BY_ID, "guard-stance": lastingBuff },
+    randomSeed: "no-usable-command-seed",
+    maxRounds: 1,
+    contentVersion: "starter-content",
+  });
+  // 第 1 动施放 Buff；第 2、3 动这一圈只有同源仍在生效的 Buff，判定为失败并消耗行动点。
+  const failures = result.events.filter((event) => event.type === "SkillFailed" && event.actorId === "hero-1" && event.reason === "noUsableCommand");
+  assert.equal(failures.length, 2, "两个行动槽都判定为失败");
+  assert.ok(failures.every((event) => event.consumedAction === true), "失败必须消耗行动点");
+  assert.ok(failures.every((event) => event.actionSchedule?.ordinal >= 2), "每个行动槽各自记录自己的先攻序号");
+  assert.equal(result.events.filter((event) => event.type === "EffectApplied" && event.sourceSkillId === "guard-stance").length, 1);
+
+  const report = createDisplayBattleReport({
+    dungeonName: "测试地城",
+    battleName: "测试战斗",
+    result: result.finalState.result,
+    roundCount: result.finalState.round,
+    levelNumber: 1,
+    events: result.events,
+  });
+  const heroActions = report.rounds[0].mainRound.filter((action) => action.actor.id === "hero-1");
+  assert.equal(heroActions.length, 3);
+  assert.equal(heroActions[0].skill.name, "架势：守势");
+  assert.equal(heroActions[0].failure, null);
+  for (const action of heroActions.slice(1)) {
+    assert.equal(action.skill.name, null, "行动级失败没有具体技能");
+    assert.deepEqual(action.failure, { reason: "noUsableCommand", reasonLabel: "无法执行任何行动" });
+    assert.deepEqual(action.targets, []);
+    assert.ok(action.schedule, "仍然显示先攻序号");
+  }
+  assert.match(renderEventsToText(result.events), /晴空 无法执行任何行动。/);
+});
+
 test("英雄没有保存行动设置时提示无法行动，不自动挑选技能", () => {
   const result = simulateBattle({
     initialState: { battleId: "hero-without-settings", floorNumber: 1, units: [heroUnit(), monsterUnit()] },
@@ -479,7 +645,22 @@ test("英雄没有保存行动设置时提示无法行动，不自动挑选技�
     maxRounds: 1,
   });
   assert.equal(result.events.some((ev) => ev.type === "SkillAttempted" && ev.actorId === "hero-1"), false);
-  assert.ok(result.events.some((ev) => ev.type === "SkillFailed" && ev.actorId === "hero-1" && ev.reason === "noCommands"));
+  const failures = result.events.filter((ev) => ev.type === "SkillFailed" && ev.actorId === "hero-1" && ev.reason === "noCommands");
+  assert.ok(failures.length >= 1);
+  assert.ok(failures.every((ev) => ev.consumedAction === true), "没有配置指令同样消耗行动点");
+  assert.ok(failures.every((ev) => ev.actionSchedule), "每个行动槽各有一条提示");
+  const report = createDisplayBattleReport({
+    dungeonName: "测试地城",
+    battleName: "测试战斗",
+    result: result.finalState.result,
+    roundCount: result.finalState.round,
+    levelNumber: 1,
+    events: result.events,
+  });
+  const heroRows = report.rounds[0].mainRound.filter((action) => action.actor.id === "hero-1");
+  assert.equal(heroRows.length, failures.length, "每条提示在战报里各占一行");
+  assert.ok(heroRows.every((action) => action.failure?.reasonLabel === "没有配置指令"));
+  assert.match(renderEventsToText(result.events), /晴空 没有配置指令。/);
 });
 
 test("干等指令消耗本次行动且不尝试释放技能", () => {
@@ -527,6 +708,36 @@ test("范围技能对覆盖到的每个目标分别进行命中投掷", () => {
   });
   const rolledTargets = result.events.filter((ev) => ev.type === "AttackRolled" && ev.actorId === "hero-1").map((ev) => ev.targetId);
   assert.deepEqual(new Set(rolledTargets), new Set(["monster-1", "monster-2"]));
+});
+
+test("动态目标上限 2 +10%×英雄等级在 40 级覆盖 6 人", () => {
+  const natureLore = {
+    id: "nature-lore",
+    name: "天赋：自然学识",
+    baseType: "improve",
+    timing: { preRound: false, mainAction: true, initiative: false, reactiveDefense: false, passive: false },
+    target: {
+      side: "ally",
+      mode: "globalAoE",
+      maxTargets: 2,
+      maxTargetsFormula: { base: 2, terms: [{ scale: "heroLevel", ratio: 10 }] },
+      allowSummons: true,
+    },
+    manaCost: null,
+    attributeFormula: {},
+    effects: [],
+  };
+  const actor = heroUnit({ id: "nature", name: "丰饶", level: 40, skills: { "nature-lore": { baseLevel: 4 } } });
+  const allies = Array.from({ length: 6 }, (_, index) => heroUnit({ id: `ally-${index + 1}`, name: `队友${index + 1}` }));
+  const result = simulateBattle({
+    initialState: { battleId: "dynamic-target-count", floorNumber: 1, units: [actor, ...allies, monsterUnit()] },
+    battlePlans: { nature: createBattlePlan({ actorId: "nature", defaultPlan: { position: "front", initiativeSkillId: null, preRound: [], mainRound: [{ id: "nature", skillId: "nature-lore", repeat: "normal" }] } }) },
+    skills: { "nature-lore": natureLore },
+    randomSeed: "dynamic-target-count",
+    maxRounds: 1,
+  });
+  const targets = result.events.filter((event) => event.type === "TargetSelected" && event.actorId === "nature");
+  assert.equal(targets.length, 6);
 });
 
 test("Buff 合并技能、多个调用物品和套装效果，并取最长持续时间", () => {
@@ -649,7 +860,7 @@ test("回合前指令按重复模式推进而不是每回合重复同一条", ()
   assert.deepEqual(preRoundAttempts.map((ev) => ev.skillId), ["guard-stance", "second-buff"]);
 });
 
-test("无限持续的回合前 Buff 仍生效时不会再次释放", () => {
+test("无限持续的回合前 Buff 仍生效时不再尝试，也不产生失败提示", () => {
   const persistent = {
     ...STARTER_SKILL_BY_ID["guard-stance"],
     id: "persistent-party-buff",
@@ -666,14 +877,30 @@ test("无限持续的回合前 Buff 仍生效时不会再次释放", () => {
     maxRounds: 2,
   });
   const attempts = result.events.filter((event) => event.type === "SkillAttempted" && event.skillId === "persistent-party-buff");
-  assert.equal(attempts.length, 2, "第二回合仍会记录尝试，但不会再次施放成功");
+  assert.equal(attempts.length, 1, "效果仍生效的回合前调用是空操作：不产生尝试、不再消耗法力");
+  assert.equal(result.events.filter((event) => event.type === "SkillFailed" && event.skillId === "persistent-party-buff").length, 0, "空操作不应产生失败提示");
   assert.equal(result.events.filter((event) => event.type === "EffectApplied" && event.sourceSkillId === "persistent-party-buff").length, 2, "首次施放对两个目标各应用一次");
-  assert.ok(result.events.some((event) => event.type === "SkillFailed" && event.skillId === "persistent-party-buff" && event.reason === "sameSourceActive"));
   const targets = result.events.filter((event) => event.type === "TargetSelected" && event.actorId === "hero-1" && event.round === 1 && event.phase === "PreRoundCommandsExecuted").map((event) => event.targetId);
   assert.deepEqual(new Set(targets), new Set(["hero-1", "hero-2"]));
+  // 第 2 回合的回合前阶段完全没有任何行动事件。
+  assert.equal(result.events.some((event) => event.round === 2 && event.phase === "PreRoundCommandsExecuted"), false);
   const roundTwoStatus = result.events.find((event) => event.type === "StatusSnapshot" && event.round === 2 && event.unitId === "hero-2");
   assert.equal(roundTwoStatus.buffSnapshots[0].name, "长效理想乡");
   assert.equal(roundTwoStatus.buffSnapshots[0].values[0].target.key, "manaMax");
+});
+
+test("回合前 Buff 到期后仍会重新释放（跳过不会让指令失效）", () => {
+  const result = simulateBattle({
+    initialState: { battleId: "pre-round-recast", floorNumber: 1, units: [heroUnit({ mana: 200 }), monsterUnit({ health: 9999 })], preRoundOrder: [] },
+    battlePlans: plans({ preRound: [{ id: "guard", skillId: "guard-stance", repeat: "normal" }] }),
+    skills: STARTER_SKILL_BY_ID,
+    randomSeed: "pre-round-recast-seed",
+    maxRounds: 4,
+  });
+  // 守势持续“1 个回合”＝当前回合与下一个回合：第 1 回合释放，第 2 回合因仍生效被跳过，第 3 回合重新释放。
+  const appliedRounds = result.events.filter((event) => event.type === "EffectApplied" && event.sourceSkillId === "guard-stance").map((event) => event.round);
+  assert.deepEqual(appliedRounds, [1, 3]);
+  assert.equal(result.events.some((event) => event.type === "SkillFailed" && event.skillId === "guard-stance" && event.reason === "sameSourceActive"), false, "跳过不应产生失败提示");
 });
 
 test("技能定义集合自检", () => {
