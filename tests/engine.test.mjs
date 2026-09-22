@@ -367,6 +367,118 @@ test("回合前效果影响当前回合的回复与先攻", () => {
   assert.ok(expired, "持续 1 个回合的守势应在第 2 回合末结束");
 });
 
+test("体力公式 Buff 保留伤害量，法力与智力意志 Buff 直接增加法力余额", () => {
+  const resourceBuff = {
+    ...STARTER_SKILL_BY_ID["guard-stance"],
+    id: "resource-formula-buff",
+    name: "资源公式增益",
+    manaCost: null,
+    effects: [{
+      id: "resource-formula-effect",
+      name: "资源公式增益",
+      duration: { kind: "untilDungeonEnd" },
+      activation: { kind: "immediate" },
+      modifiers: [
+        { kind: "flat", value: 500, target: { type: "derived", key: "healthMax" } },
+        { kind: "flat", value: 117, target: { type: "derived", key: "manaMax" } },
+        { kind: "flat", value: 14, target: { type: "attribute", key: "intelligence" } },
+        { kind: "flat", value: 14, target: { type: "attribute", key: "willpower" } },
+      ],
+    }],
+  };
+  const hero = heroUnit({
+    health: 800,
+    mana: 285,
+    baseStatDefaults: { healthMax: 957 },
+    skills: { "resource-formula-buff": { baseLevel: 1 } },
+  });
+  assert.equal(deriveUnit(hero).healthMax, 1000);
+  const result = simulateBattle({
+    initialState: { battleId: "formula-resource-buff", floorNumber: 1, units: [hero, monsterUnit({ health: 9999 })] },
+    battlePlans: plans({ preRound: [{ skillId: "resource-formula-buff", repeat: "normal" }], mainRound: [] }),
+    skills: { ...STARTER_SKILL_BY_ID, "resource-formula-buff": resourceBuff },
+    randomSeed: "formula-resource-buff-seed",
+    maxRounds: 1,
+  });
+  const formulaChanges = result.events.filter((event) => event.type === "ResourceChanged" && event.reason === "effectApplied" && event.actorId === "hero-1");
+  const healthChange = formulaChanges.find((event) => event.resource === "health");
+  const manaChange = formulaChanges.find((event) => event.resource === "mana");
+  assert.deepEqual(
+    { delta: healthChange.delta, current: healthChange.current, max: healthChange.max },
+    { delta: 500, current: 1300, max: 1500 },
+  );
+  // +117 法力，以及 +14 智力 ×2、+14 意志 ×3，共直接增加 187 法力。
+  assert.deepEqual({ delta: manaChange.delta, current: manaChange.current }, { delta: 187, current: 472 });
+});
+
+test("回合前法力 Buff 增加的法力可以支付同回合技能消耗", () => {
+  const manaBuff = {
+    ...STARTER_SKILL_BY_ID["guard-stance"],
+    id: "grant-mana",
+    name: "赐予法力",
+    manaCost: null,
+    effects: [{
+      id: "grant-mana-effect",
+      name: "赐予法力",
+      duration: { kind: "untilDungeonEnd" },
+      activation: { kind: "immediate" },
+      modifiers: [{ kind: "flat", value: 117, target: { type: "derived", key: "manaMax" } }],
+    }],
+  };
+  const paidAttack = {
+    ...STARTER_SKILL_BY_ID["basic-swordsmanship"],
+    id: "paid-attack",
+    name: "耗魔攻击",
+    manaCost: { standard: 100, display: 100 },
+  };
+  const result = simulateBattle({
+    initialState: {
+      battleId: "mana-buff-pays-cost",
+      floorNumber: 1,
+      units: [heroUnit({ mana: 0, skills: { "grant-mana": { baseLevel: 1 }, "paid-attack": { baseLevel: 1 } } }), monsterUnit({ health: 9999 })],
+    },
+    battlePlans: plans({ preRound: [{ skillId: "grant-mana", repeat: "normal" }], mainRound: [{ skillId: "paid-attack", repeat: "normal" }] }),
+    skills: { ...STARTER_SKILL_BY_ID, "grant-mana": manaBuff, "paid-attack": paidAttack },
+    randomSeed: "mana-buff-pays-cost-seed",
+    maxRounds: 1,
+  });
+  const spent = result.events.find((event) => event.type === "ResourceSpent" && event.actorId === "hero-1" && event.reason === "skillCost");
+  assert.equal(spent.amount, 90);
+  assert.equal(result.events.some((event) => event.type === "SkillAttempted" && event.skillId === "paid-attack"), true);
+});
+
+test("临时法力 Buff 到期时只撤销公式加成并保留期间回复", () => {
+  const temporaryMana = {
+    ...STARTER_SKILL_BY_ID["guard-stance"],
+    id: "temporary-mana",
+    name: "临时法力",
+    manaCost: null,
+    effects: [{
+      id: "temporary-mana-effect",
+      name: "临时法力",
+      duration: { kind: "untilCurrentRoundEnd" },
+      activation: { kind: "immediate" },
+      modifiers: [{ kind: "flat", value: 117, target: { type: "derived", key: "manaMax" } }],
+    }],
+  };
+  const result = simulateBattle({
+    initialState: {
+      battleId: "temporary-mana-expiry",
+      floorNumber: 1,
+      units: [heroUnit({ mana: 10, skills: { "temporary-mana": { baseLevel: 1 } } }), monsterUnit({ health: 9999 })],
+    },
+    battlePlans: plans({ preRound: [{ skillId: "temporary-mana", repeat: "normal" }], mainRound: [] }),
+    skills: { ...STARTER_SKILL_BY_ID, "temporary-mana": temporaryMana },
+    randomSeed: "temporary-mana-expiry-seed",
+    maxRounds: 1,
+  });
+  const changes = result.events.filter((event) => event.type === "ResourceChanged" && event.resource === "mana" && event.actorId === "hero-1");
+  assert.equal(changes.find((event) => event.reason === "effectApplied").delta, 117);
+  assert.equal(changes.find((event) => event.reason === "effectExpired").delta, -117);
+  const regeneration = changes.find((event) => event.reason === "regeneration").delta;
+  assert.equal(result.finalState.units.find((unit) => unit.id === "hero-1").mana, 10 + regeneration);
+});
+
 test("同源效果不重复附加并产生诊断", () => {
   const result = run({
     // 守势覆盖当前回合与下一回合；只检查其首次到期前的重复施放。

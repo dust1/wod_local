@@ -131,6 +131,12 @@ export function simulateBattle(input) {
       unit.defeatedAtRound = roundOffset;
     }
   }
+  // 当前资源 = 当前公式值 + 战斗内净变化。体力的净变化通常是负的伤害债务；
+  // 法力的净变化包含消耗与回复。Buff 变化只重算公式值，不抹掉这部分战斗记录。
+  const resourceOffsets = new Map(units.map((unit) => {
+    const derived = deriveUnit(unit, { roundingPolicy, effectLedger: ledger });
+    return [unit.id, { health: unit.health - derived.healthMax, mana: unit.mana - derived.manaMax }];
+  }));
   const events = [];
   const diagnostics = {
     rulesetVersion: input.rulesetVersion ?? RULESET_VERSION,
@@ -171,6 +177,56 @@ export function simulateBattle(input) {
   const derivedOf = (unit) => deriveUnit(unit, { roundingPolicy, effectLedger: ledger });
   const livingUnits = (side) => units.filter((unit) => unit.present && unit.alive && (side === undefined || unit.side === side));
   const sideAlive = (side) => livingUnits(side).length > 0;
+
+  function rememberResourceOffsets(unit, derived = derivedOf(unit)) {
+    resourceOffsets.set(unit.id, {
+      health: unit.health - derived.healthMax,
+      mana: unit.mana - derived.manaMax,
+    });
+  }
+
+  /**
+   * Buff 改变体力公式值时保留既有伤害量；改变法力公式值时直接改变法力余额。
+   * 例：800/1000 体力获得 +500 上限后成为 1300/1500；法力没有最大值概念。
+   */
+  function reconcileFormulaResourceChange(unit, before, reason) {
+    if (!unit || !before) return;
+    const after = derivedOf(unit);
+    const healthFormulaDelta = after.healthMax - before.healthMax;
+    const manaFormulaDelta = after.manaMax - before.manaMax;
+    if (healthFormulaDelta !== 0) {
+      const previous = unit.health;
+      const offset = resourceOffsets.get(unit.id)?.health ?? (previous - before.healthMax);
+      unit.health = Math.max(0, Math.floor(after.healthMax + offset));
+      const delta = unit.health - previous;
+      emit("ResourceChanged", {
+        actorId: unit.id, actorName: unit.name, resource: "health", resourceLabel: "体力",
+        delta, current: unit.health, max: after.healthMax, reason,
+      });
+      if (unit.health <= 0 && unit.alive) {
+        unit.alive = false;
+        unit.defeatedAtRound = round;
+        emit("UnitDefeated", { targetId: unit.id, targetName: unit.name, reason: "healthFormulaChanged" });
+      }
+    }
+    if (manaFormulaDelta !== 0) {
+      const previous = unit.mana;
+      const offset = resourceOffsets.get(unit.id)?.mana ?? (previous - before.manaMax);
+      unit.mana = Math.max(0, Math.floor(after.manaMax + offset));
+      emit("ResourceChanged", {
+        actorId: unit.id, actorName: unit.name, resource: "mana", resourceLabel: "法力",
+        delta: unit.mana - previous, current: unit.mana, reason,
+      });
+    }
+  }
+
+  const derivedResourcesBeforeLedgerChange = () => new Map(
+    units.map((unit) => [unit.id, derivedOf(unit)]),
+  );
+
+  function reconcileAllFormulaResourceChanges(beforeByUnit, reason) {
+    for (const unit of units) reconcileFormulaResourceChange(unit, beforeByUnit.get(unit.id), reason);
+  }
 
   const cursors = new Map();
   const preRoundCursors = new Map();
@@ -251,6 +307,7 @@ export function simulateBattle(input) {
     executeMainActions(schedule, initiativeValues);
 
     enterPhase("ExpiredEffectsRemoved");
+    const beforeExpiration = derivedResourcesBeforeLedgerChange();
     const expired = ledger.expireAtRoundEnd(round, {
       battleEnded: false,
       dungeonEnded: false,
@@ -263,6 +320,8 @@ export function simulateBattle(input) {
         reason: "durationEnded",
       });
     }
+    reconcileAllFormulaResourceChanges(beforeExpiration, "effectExpired");
+    const beforeActivation = derivedResourcesBeforeLedgerChange();
     const activated = ledger.activateAtRound(round + 1);
     for (const instance of activated) {
       emit("EffectActivationChanged", {
@@ -272,6 +331,7 @@ export function simulateBattle(input) {
         state: "active",
       });
     }
+    reconcileAllFormulaResourceChanges(beforeActivation, "effectActivated");
 
     // 回合结束本身没有独立事件类型（设计文档 §18 的事件清单不含 RoundEnded），
     // 阶段推进记录在 diagnostics.roundPhaseTrace 中。
@@ -281,6 +341,7 @@ export function simulateBattle(input) {
 
   const result = sideAlive("defender") && !sideAlive(ATTACKER_SIDE) ? "defeat" : sideAlive(ATTACKER_SIDE) && !sideAlive("defender") ? "victory" : "draw";
   emit("BattleEnded", { result, resultLabel: result === "victory" ? "胜利" : result === "defeat" ? "失败" : "未决" });
+  const beforeBattleEndExpiration = derivedResourcesBeforeLedgerChange();
   const battleEndExpired = ledger.onBattleEnd();
   for (const instance of battleEndExpired) {
     emit("EffectExpired", {
@@ -290,6 +351,7 @@ export function simulateBattle(input) {
       reason: "battleEnded",
     });
   }
+  reconcileAllFormulaResourceChanges(beforeBattleEndExpiration, "effectExpired");
 
   const snapshotHash = hashInputSnapshot({
     units: input.initialState?.units ?? [],
@@ -433,11 +495,12 @@ export function simulateBattle(input) {
       const manaDelta = result.mana.current - unit.mana;
       unit.health = result.health.current;
       unit.mana = result.mana.current;
+      rememberResourceOffsets(unit, derived);
       if (healthDelta !== 0) {
         emit("ResourceChanged", { actorId: unit.id, actorName: unit.name, resource: "health", resourceLabel: "体力", delta: healthDelta, current: unit.health, max: derived.healthMax });
       }
       if (manaDelta !== 0) {
-        emit("ResourceChanged", { actorId: unit.id, actorName: unit.name, resource: "mana", resourceLabel: "法力", delta: manaDelta, current: unit.mana, max: derived.manaMax });
+        emit("ResourceChanged", { actorId: unit.id, actorName: unit.name, resource: "mana", resourceLabel: "法力", delta: manaDelta, current: unit.mana, reason: "regeneration" });
       }
     }
   }
@@ -458,6 +521,7 @@ export function simulateBattle(input) {
       }
       if (resource === "health") owner.health -= amount;
       else owner.mana -= amount;
+      rememberResourceOffsets(owner);
       emit("ResourceSpent", { actorId: owner.id, actorName: owner.name, resource, resourceLabel: resource === "health" ? "体力" : "法力", amount, reason: "summonUpkeep" });
     }
   }
@@ -787,6 +851,7 @@ export function simulateBattle(input) {
 
     if (cost) {
       actor.mana -= cost.applied;
+      rememberResourceOffsets(actor, derivedOf(actor));
       emit("ResourceSpent", { actorId: actor.id, actorName: actor.name, resource: "mana", resourceLabel: "法力", amount: cost.applied, reason: "skillCost", trace: cost });
     }
 
@@ -919,6 +984,7 @@ export function simulateBattle(input) {
 
       if (damageResult.applied > 0) {
         target.health = Math.max(0, target.health - damageResult.applied);
+        rememberResourceOffsets(target, targetDerived);
         emit("DamageApplied", {
           actorId: actor.id,
           actorName: actor.name,
@@ -957,6 +1023,7 @@ export function simulateBattle(input) {
       const targetDerived = derivedOf(target);
       const amount = Math.max(0, Math.floor(rollPolicy.rollAroundMean(base, { purpose: "heal", randomStream: stream })));
       target.health = Math.min(targetDerived.healthMax, target.health + amount);
+      rememberResourceOffsets(target, targetDerived);
       emit("HealingApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, amount, healthAfter: target.health, trace: { base, applied: amount } });
       applySkillEffects(actor, skill, target, command, { hit: true, dealDamage: false });
     }
@@ -1028,6 +1095,7 @@ export function simulateBattle(input) {
     summon.health = template.health ?? summonDerived.healthMax;
     summon.mana = template.mana ?? summonDerived.manaMax;
     units.push(summon);
+    rememberResourceOffsets(summon, summonDerived);
     for (const definition of template.skillDefinitions ?? []) skills.set(definition.id, definition);
     if (template.battlePlan) battlePlans[summon.id] = template.battlePlan;
     emit("SummonCreated", { actorId: actor.id, actorName: actor.name, summonId: summon.id, summonName: summon.name, position, joinsThisRound: context.phase === "PreRoundCommandsExecuted" });
@@ -1077,6 +1145,7 @@ export function simulateBattle(input) {
       return candidate.kind === "rounds" && Number(candidate.value ?? 0) > Number(longest.value ?? 0) ? candidate : longest;
     }, { kind: "untilCurrentRoundEnd" });
 
+    const beforeResources = derivedOf(target);
     const outcome = ledger.apply({
       effectDefinitionId: skill.name,
       effectName: skill.name,
@@ -1101,6 +1170,7 @@ export function simulateBattle(input) {
     }
     const instance = outcome.instance;
     emit("EffectApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, effectId: skill.name, effectName: skill.name, state: instance.state, sourceSkillId: skill.id });
+    reconcileFormulaResourceChange(target, beforeResources, "effectApplied");
     if (instance.state === "active" && instance.activationRound === round) emit("EffectActivationChanged", { targetId: target.id, targetName: target.name, effectName: skill.name, state: "active" });
 
     if (!behavior.reapplies && skill.baseType === "deteriorate") {

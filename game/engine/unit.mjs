@@ -219,10 +219,10 @@ export function skillManaCost(unit, skill, options = {}) {
   return manaCost({ standardCost: skill.manaCost.standard ?? skill.manaCost.display ?? 0, skillLevel: level }, options);
 }
 
-/** 自然回复，正回复不得超过上限。 */
+/** 自然回复：体力受最大值限制，法力没有最大值。 */
 export function regenerate(unit, derived) {
   const health = applyRegeneration({ current: unit.health, max: derived.healthMax, regeneration: derived.healthRegeneration });
-  const mana = applyRegeneration({ current: unit.mana, max: derived.manaMax, regeneration: derived.manaRegeneration });
+  const mana = applyRegeneration({ current: unit.mana, regeneration: derived.manaRegeneration });
   return { health, mana };
 }
 

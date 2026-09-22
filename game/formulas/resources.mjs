@@ -74,13 +74,19 @@ export function legalizeResourceAfterMaxChange({ resourceKind, newMax, accumulat
 }
 
 /**
- * 自然回复。正回复不得超过当前上限；负回复表现为资源流失。
+ * 自然回复。体力传入 max 时不得超过上限；法力没有上限，因此不传 max。
+ * 负回复表现为资源流失。
  * 文档 §11.4。
  */
 export function applyRegeneration({ current, max, regeneration }) {
   const exact = current + regeneration;
   if (regeneration >= 0) {
-    return { exact, current: Math.min(max, Math.floor(exact)), clampedByMax: exact > max };
+    const hasMaximum = Number.isFinite(max);
+    return {
+      exact,
+      current: hasMaximum ? Math.min(max, Math.floor(exact)) : Math.floor(exact),
+      clampedByMax: hasMaximum && exact > max,
+    };
   }
   return { exact, current: Math.max(0, Math.floor(exact)), clampedByMax: false };
 }

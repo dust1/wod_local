@@ -205,6 +205,9 @@ test("自然回复不得超过上限，负回复表现为流失", () => {
   assert.equal(down.current, 30);
   const floored = applyRegeneration({ current: 1, max: 43, regeneration: -5 });
   assert.equal(floored.current, 0);
+  const manaWithoutMaximum = applyRegeneration({ current: 40, regeneration: 10 });
+  assert.equal(manaWithoutMaximum.current, 50);
+  assert.equal(manaWithoutMaximum.clampedByMax, false);
 });
 
 test("随机流由种子决定且可复现", () => {
