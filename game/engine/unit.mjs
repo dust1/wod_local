@@ -5,6 +5,7 @@ import { damageMean, skillRollMean } from "../formulas/rolls.mjs";
 import { manaCost } from "../formulas/mana-cost.mjs";
 import { applyModifierPipeline } from "../modifiers/pipeline.mjs";
 import { actionsFromExact, DEFAULT_ROUNDING_POLICY } from "../formulas/calculation.mjs";
+import { calculateSkillLevel } from "../domain/skill-level.mjs";
 
 export const UNIT_KINDS = Object.freeze(["hero", "monster", "summon"]);
 
@@ -24,6 +25,7 @@ export function createUnit(input) {
       baseLevel: Number(skill.baseLevel ?? skill.level ?? 0),
       equipmentBonus: Number(skill.equipmentBonus ?? 0),
       otherBonus: Number(skill.otherBonus ?? 0),
+      percentageBonuses: (skill.percentageBonuses ?? []).map(Number),
     };
   }
 
@@ -175,13 +177,20 @@ export function effectiveSkillLevelOf(unit, skillId, options = {}) {
     const category = /^(.*?)\s*类别的所有技能$/.exec(String(modifier.target.key ?? ""))?.[1]?.trim();
     return Boolean(category && (skill?.skillTypeNames ?? []).some((name) => String(name).includes(category) || category.includes(String(name))));
   }) : [];
-  const base = entry.baseLevel;
-  const equipmentBonus = Math.min(Math.max(0, entry.equipmentBonus), Math.max(0, base));
-  const otherBonus = entry.otherBonus + mods.reduce((sum, modifier) => {
-    const value = Number(modifier.value ?? 0);
-    return sum + (modifier.kind === "percent" || modifier.kind === "globalPercent" ? base * value / 100 : value);
-  }, 0);
-  return Math.max(0, base + equipmentBonus + otherBonus);
+  const percentageBonuses = [
+    ...(entry.percentageBonuses ?? []),
+    ...mods.filter((modifier) => modifier.kind === "percent" || modifier.kind === "globalPercent").map((modifier) => Number(modifier.value ?? 0)),
+  ];
+  const postPercentFlatBonuses = [
+    entry.otherBonus,
+    ...mods.filter((modifier) => modifier.kind !== "percent" && modifier.kind !== "globalPercent").map((modifier) => Number(modifier.value ?? 0)),
+  ];
+  return calculateSkillLevel({
+    baseLevel: entry.baseLevel,
+    equipmentFlatBonuses: [entry.equipmentBonus],
+    percentageBonuses,
+    postPercentFlatBonuses,
+  }).exact;
 }
 
 /** 攻击/防御/伤害的平均值，全部使用实时技能等级。 */

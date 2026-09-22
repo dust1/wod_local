@@ -23,6 +23,9 @@ import {
 } from "./holder-effect.mjs";
 import { applyModifierPipeline } from "../modifiers/pipeline.mjs";
 import { actionsFromExact, DEFAULT_ROUNDING_POLICY } from "../formulas/calculation.mjs";
+import { calculateSkillLevel, capEquipmentLevelBonus } from "./skill-level.mjs";
+
+export { capEquipmentLevelBonus } from "./skill-level.mjs";
 
 export const INSTANCE_STAGES = Object.freeze(["base", "equipment", "skill"]);
 
@@ -43,10 +46,6 @@ export const COMBAT_BUCKETS = Object.freeze({
  * 角标规则：装备直接生效的技能等级加成 ≤ 技能基础等级（设计文档 §8.7）。
  * 只用于装备本体；套装、技能被动、联盟纪念碑等非装备直接来源不受该上限约束。
  */
-export function capEquipmentLevelBonus(bonus, baseLevel) {
-  return Math.min(Math.max(0, Number(bonus ?? 0)), Math.max(0, Number(baseLevel ?? 0)));
-}
-
 /**
  * 修正项 → 已求值的「固定值 / 百分比」。
  * 按等级缩放的写法必须在构造修正时就用正确的上下文求值：技能来源的修正
@@ -328,19 +327,42 @@ export function createCharacterInstance(input) {
       if (categoryPrefix) return matchesSkillCategory(categoryPrefix, skill);
       return modifier.target.key === skill.name;
     });
-    const levelDelta = (mods) => mods.reduce((sum, modifier) => {
-      const value = Number(modifier.value ?? 0);
-      return sum + (modifier.origin?.kind === "percent" ? (baseLevel * value) / 100 : value);
-    }, 0);
     const itemLevelTerms = levelModifiers.filter((modifier) => modifier.sourceKind === "item");
     const setLevelTerms = levelModifiers.filter((modifier) => modifier.sourceKind === "itemSet");
     const skillLevelTerms = levelModifiers.filter((modifier) => ["skill", "race", "profession"].includes(modifier.sourceKind));
-    const itemLevelBonus = capEquipmentLevelBonus(levelDelta(itemLevelTerms), baseLevel);
-    const setLevelBonus = levelDelta(setLevelTerms);
-    const skillLevelBonus = levelDelta(skillLevelTerms);
-    const equipmentLevelBonus = capEquipmentLevelBonus(equipmentLevelBonusRaw, baseLevel);
-    const liveLevel = Math.max(0, baseLevel + equipmentLevelBonus + itemLevelBonus + setLevelBonus + skillLevelBonus);
-    return { baseLevel, equipmentLevelBonusRaw, levelModifiers, itemLevelBonus, setLevelBonus, skillLevelBonus, equipmentLevelBonus, liveLevel };
+    const flatValue = (mods) => mods.filter((modifier) => modifier.kind !== "percent" && modifier.kind !== "globalPercent")
+      .reduce((sum, modifier) => sum + Number(modifier.value ?? 0), 0);
+    const percentageBonuses = levelModifiers.filter((modifier) => modifier.kind === "percent" || modifier.kind === "globalPercent")
+      .map((modifier) => Number(modifier.value ?? 0));
+    const itemLevelBonusRaw = flatValue(itemLevelTerms);
+    const calculation = calculateSkillLevel({
+      baseLevel,
+      equipmentFlatBonuses: [equipmentLevelBonusRaw, itemLevelBonusRaw],
+      percentageBonuses,
+      postPercentFlatBonuses: [flatValue(setLevelTerms), flatValue(skillLevelTerms)],
+    });
+    // 兼容既有展示字段：先分配数据库装备字段，再把剩余的装备上限记到物品效果。
+    const equipmentLevelBonus = Math.min(capEquipmentLevelBonus(equipmentLevelBonusRaw, baseLevel), calculation.equipmentBonusApplied);
+    const itemLevelBonus = calculation.equipmentBonusApplied - equipmentLevelBonus;
+    const setLevelBonus = flatValue(setLevelTerms);
+    const skillLevelBonus = flatValue(skillLevelTerms);
+    return {
+      baseLevel,
+      equipmentLevelBonusRaw,
+      itemLevelBonusRaw,
+      levelModifiers,
+      itemLevelBonus,
+      setLevelBonus,
+      skillLevelBonus,
+      equipmentLevelBonus,
+      equipmentLevelBonusApplied: calculation.equipmentBonusApplied,
+      percentageBase: calculation.percentageBase,
+      percentageBonuses: calculation.percentageBonuses,
+      percentMultiplier: calculation.percentMultiplier,
+      afterPercentLevel: calculation.afterPercentLevel,
+      postPercentFlatBonus: calculation.postPercentFlatBonus,
+      liveLevel: calculation.exact,
+    };
   };
 
   // 技能拥有者效果中的“×技能等级”必须使用完成装备、套装及技能等级奖励后的实时等级。
@@ -471,7 +493,8 @@ export function createCharacterInstance(input) {
 
   // ---------------------------------------------------------- 5. 技能等级与技能效果
   const skills = (input?.skills ?? []).map((skill) => {
-    const { baseLevel, equipmentLevelBonusRaw, levelModifiers, itemLevelBonus, setLevelBonus, skillLevelBonus, equipmentLevelBonus, liveLevel } = skillLevelParts(skill);
+    const parts = skillLevelParts(skill);
+    const { baseLevel, equipmentLevelBonusRaw, itemLevelBonusRaw, levelModifiers, itemLevelBonus, setLevelBonus, skillLevelBonus, equipmentLevelBonus, equipmentLevelBonusApplied, percentageBase, percentageBonuses, percentMultiplier, afterPercentLevel, postPercentFlatBonus, liveLevel } = parts;
 
     const effectModifiers = allModifiers.filter((modifier) => {
       if (modifier.target.type !== "skillEffect") return false;
@@ -488,9 +511,16 @@ export function createCharacterInstance(input) {
       baseLevel,
       equipmentLevelBonus,
       equipmentLevelBonusRaw,
+      equipmentLevelBonusApplied,
+      itemLevelBonusRaw,
       itemLevelBonus,
       setLevelBonus,
       skillLevelBonus,
+      percentageBase,
+      percentageBonuses,
+      percentMultiplier,
+      afterPercentLevel,
+      postPercentFlatBonus,
       liveLevel,
       levelDelta: liveLevel - baseLevel,
       levelSources: contributorList(levelModifiers),

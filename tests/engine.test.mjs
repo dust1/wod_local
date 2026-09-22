@@ -934,6 +934,48 @@ test("技能类别的纯百分比 Buff 按目标技能基础等级计算", () =>
   assert.equal(effectiveSkillLevelOf(unit, "healing", { effectLedger: ledger, skill: { id: "healing", skillTypeNames: ["治疗技能"] } }), 17.5);
 });
 
+test("战斗技能等级沿用装备上限、百分比连乘和后置固定奖励", () => {
+  const ledger = new EffectLedger();
+  ledger.apply({
+    effectDefinitionId: "second-percent", effectName: "第二层百分比", buffKey: "第二层百分比",
+    sourceSkillId: "buff", targetId: "hero-1", applicationGroup: "buff",
+    appliedRound: 1, appliedPhase: "PreRoundCommandsExecuted", duration: { kind: "untilDungeonEnd" },
+    modifiers: [{ kind: "percent", value: 20, target: { type: "skill", key: "healing" } }],
+  });
+  const unit = heroUnit({
+    skills: { healing: { baseLevel: 5, equipmentBonus: 10, percentageBonuses: [20], otherBonus: 300 } },
+  });
+  assert.equal(effectiveSkillLevelOf(unit, "healing", {
+    effectLedger: ledger,
+    skill: { id: "healing", skillTypeNames: ["治疗技能"] },
+  }), 314.4);
+});
+
+test("战报 80 快照数值按角色基础、装备上限与三个百分比连乘计算", () => {
+  const ledger = new EffectLedger();
+  ledger.apply({
+    effectDefinitionId: "report-80-buffs", effectName: "战报 80 增益", buffKey: "战报 80 增益",
+    sourceSkillId: "report-80", targetId: "hero-1", applicationGroup: "buff",
+    appliedRound: 1, appliedPhase: "MainActionsExecuted", duration: { kind: "untilDungeonEnd" },
+    modifiers: [
+      { kind: "percent", value: 34, target: { type: "skill", key: "unyielding" } },
+      { kind: "percent", value: 25, target: { type: "skill", key: "unyielding" } },
+      { kind: "percent", value: 25, target: { type: "skill", key: "unyielding" } },
+      { kind: "flat", value: 30, target: { type: "skill", key: "unyielding" } },
+      { kind: "flat", value: 30, target: { type: "skill", key: "unyielding" } },
+      { kind: "flat", value: 280, target: { type: "skill", key: "unyielding" } },
+      { kind: "flat", value: 82, target: { type: "skill", key: "unyielding" } },
+      { kind: "flat", value: 81, target: { type: "skill", key: "unyielding" } },
+    ],
+  });
+  // 女士实际为基础 5、装备原始 +14（受限后 +5）、套装固定 +13。
+  const unit = heroUnit({ skills: { unyielding: { baseLevel: 5, equipmentBonus: 14, otherBonus: 13 } } });
+  assert.equal(effectiveSkillLevelOf(unit, "unyielding", {
+    effectLedger: ledger,
+    skill: { id: "unyielding", skillTypeNames: ["强化身体"] },
+  }), 536.9375);
+});
+
 test("回合前指令按重复模式推进而不是每回合重复同一条", () => {
   const skills = {
     ...STARTER_SKILL_BY_ID,

@@ -141,6 +141,30 @@ test("装备提供的技能等级加成不超过技能基础等级", () => {
   assert.equal(capEquipmentLevelBonus(-3, 4), 0);
 });
 
+test("技能等级以基础加装备为百分比基数，百分比连乘后再加固定奖励", () => {
+  const instance = createCharacterInstance({
+    hero: HERO,
+    equippedItems: [{ itemId: 1, name: "训练手册", detail: itemDetail([
+      { 类型: "对技能等级的奖励", 技能: "基础：剑术", 修正: "+6" },
+    ]) }],
+    itemSets: [{ setName: "百分比套装", pieceCount: 2, detail: itemSetDetail([
+      { 类型: "对技能等级的奖励", 技能: "基础：剑术", 修正: "+20%" },
+      { 类型: "对技能等级的奖励", 技能: "基础：剑术", 修正: "+20%" },
+      { 类型: "对技能等级的奖励", 技能: "基础：剑术", 修正: "+300" },
+    ]) }],
+    skills: [{ sourceSkillId: 140, name: "基础：剑术", level: 5, equipmentBonus: 4, detail: skillDetail([]) }],
+  });
+  const skill = instance.skills[0];
+  // 数据库装备 +4 与物品 +6 合并后只生效 +5，不能分别各吃一次上限。
+  assert.equal(skill.equipmentLevelBonusApplied, 5);
+  assert.equal(skill.equipmentLevelBonus + skill.itemLevelBonus, 5);
+  assert.equal(skill.percentageBase, 10);
+  assert.deepEqual(skill.percentageBonuses, [20, 20]);
+  assert.equal(skill.percentMultiplier, 1.44);
+  assert.equal(skill.postPercentFlatBonus, 300);
+  assert.equal(skill.liveLevel, 314.4);
+});
+
 test("装备上限只约束装备本体，套装的技能等级加成不受约束", () => {
   const fromItem = createCharacterInstance({
     hero: HERO,

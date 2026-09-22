@@ -332,7 +332,12 @@ function unitFromCharacterInstance(hero, instance, settings) {
   const skills = {};
   for (const skill of instance.skills) {
     if (!skill.skillId) continue;
-    skills[skill.skillId] = { baseLevel: Number(skill.liveLevel ?? skill.baseLevel ?? 0), equipmentBonus: 0, otherBonus: 0 };
+    skills[skill.skillId] = {
+      baseLevel: Number(skill.baseLevel ?? 0),
+      equipmentBonus: Number(skill.equipmentLevelBonusApplied ?? skill.equipmentLevelBonus ?? 0),
+      percentageBonuses: [...(skill.percentageBonuses ?? [])],
+      otherBonus: Number(skill.postPercentFlatBonus ?? ((skill.setLevelBonus ?? 0) + (skill.skillLevelBonus ?? 0))),
+    };
   }
   return {
     id: String(hero.id),
