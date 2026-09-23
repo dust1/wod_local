@@ -90,8 +90,8 @@ test("A 级公式在规则层逐条复验", () => {
   assert.equal(applyModifierPipeline(100, { modifiers: [percent(10), percent(20), flat(8), globalPercent(25)] }).exact, 175);
 });
 
-test("待验证规则清单覆盖文档 §25 的全部 20 项", () => {
-  assert.equal(RULE_QUESTIONS.length, 20);
+test("待验证规则清单只包含本地模拟需要的项目", () => {
+  assert.equal(RULE_QUESTIONS.length, 19);
   for (const question of RULE_QUESTIONS) {
     assert.ok(question.id, "规则问题缺少 id");
     assert.ok(question.question, `规则问题 ${question.id} 缺少描述`);

@@ -1,7 +1,0 @@
-@charset "utf-8";
-
-.tableMinWidthRespectingContent { width: 1px; }
-
-.tableMinHeightRespectingContent { height: 1px; }
-
-.orders_top_row, .orders_top_row > * { vertical-align: unset; }

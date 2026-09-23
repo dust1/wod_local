@@ -94,8 +94,28 @@ function run(options = {}) {
     contentVersion: "starter-content",
     maxRounds: options.maxRounds ?? 12,
     policies: options.policies,
+    itemUsage: options.itemUsage,
   });
 }
+
+test("物品每战斗次数换房间重置，每地城与剩余次数跨房间保留", () => {
+  for (const [remainingCharges, usesPerDungeon, expectedRemaining] of [[2, 3, 0], [3, 2, 1]]) {
+    const itemUsage = new Map();
+    const battlePlans = plans({ mainRound: [{
+      skillId: "basic-swordsmanship", repeat: "repeatWhilePossible",
+      calledItems: [{ id: "test-item", name: "测试耗材", instances: [
+        { instanceId: 7, remainingCharges, usesPerDungeon, usesPerBattle: 1 },
+      ] }],
+    }] });
+    const first = run({ battlePlans, itemUsage, maxRounds: 1 });
+    const second = run({ battlePlans, itemUsage, maxRounds: 1 });
+    const third = run({ battlePlans, itemUsage, maxRounds: 1 });
+    assert.equal(first.events.filter((event) => event.type === "ItemChargeSpent").length, 1);
+    assert.equal(second.events.filter((event) => event.type === "ItemChargeSpent").length, 1);
+    assert.equal(third.events.filter((event) => event.type === "ItemChargeSpent").length, 0);
+    assert.deepEqual(itemUsage.get("hero-1:7"), { used: 2, remainingCharges: expectedRemaining });
+  }
+});
 
 test("每回合严格按文档阶段顺序推进", () => {
   const result = run({ maxRounds: 1 });

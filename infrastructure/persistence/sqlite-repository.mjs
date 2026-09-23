@@ -89,6 +89,39 @@ export function createRepository(db) {
   };
   const databasePath = storage.databasePath;
   const reportDirectory = storage.reportDirectory;
+  const itemUniquenessCache = new Map();
+  const itemUniqueness = (itemId) => {
+    if (itemUniquenessCache.has(itemId)) return itemUniquenessCache.get(itemId);
+    const metadata = db.prepare("SELECT json_path FROM item_detail_metadata WHERE item_id=?").get(Number(itemId));
+    let uniqueness = "none";
+    if (metadata) {
+      const root = resolve(process.cwd());
+      const path = resolve(root, metadata.json_path);
+      const relativePath = relative(root, path);
+      if (relativePath.startsWith("..") || relativePath.includes(":")) throw new Error("物品详情路径无效");
+      const detail = JSON.parse(readFileSync(path, "utf8"));
+      const label = String(detail?.["详细属性"]?.["唯一性"] ?? detail?.["唯一性"] ?? "");
+      uniqueness = label.includes("英雄唯一") ? "hero" : label.includes("队伍唯一") ? "team" : "none";
+    }
+    itemUniquenessCache.set(itemId, uniqueness);
+    return uniqueness;
+  };
+  /** 仅检查穿戴中的同一物品定义；仓库中可保留多件，账号间互不影响。 */
+  const assertUniqueEquipment = (heroId, itemIds) => {
+    const hero = db.prepare("SELECT user_id FROM heroes WHERE id=?").get(Number(heroId));
+    const counts = new Map();
+    for (const itemId of itemIds) counts.set(Number(itemId), (counts.get(Number(itemId)) ?? 0) + 1);
+    for (const [itemId, count] of counts) {
+      const uniqueness = itemUniqueness(itemId);
+      if (uniqueness === "hero" && count > 1) throw new Error("英雄唯一物品不能由同一角色穿戴多件");
+      if (uniqueness !== "team") continue;
+      const elsewhere = db.prepare(`SELECT COUNT(*) count FROM hero_equipment he
+        JOIN heroes h ON h.id=he.hero_id JOIN item_instances ii ON ii.id=he.item_instance_id
+        WHERE h.user_id=? AND h.id<>? AND h.deleted_at IS NULL AND ii.item_id=?`)
+        .get(Number(hero.user_id), Number(heroId), itemId).count;
+      if (count + Number(elsewhere) > 1) throw new Error("队伍唯一物品在当前账号中只能由一个角色穿戴一件");
+    }
+  };
   const reportPath = (jsonPath) => {
     const resolvedPath = resolve(dirname(databasePath), String(jsonPath));
     const fromReportDirectory = relative(reportDirectory, resolvedPath);
@@ -456,6 +489,12 @@ export function createRepository(db) {
         if (equipped) {
           const slotId = equipSlotIdForItemSlot(row.item_slot);
           if (!slotId) throw new Error("该物品不可装备");
+          const desiredItemIds = db.prepare(`SELECT ii.item_id FROM hero_equipment he
+            JOIN item_instances ii ON ii.id=he.item_instance_id
+            WHERE he.hero_id=? AND he.equip_slot<>? AND he.item_instance_id<>?`)
+            .all(Number(heroId), slotId, Number(instanceId)).map((entry) => entry.item_id);
+          const itemId = db.prepare("SELECT item_id FROM item_instances WHERE id=?").get(Number(instanceId)).item_id;
+          assertUniqueEquipment(heroId, [...desiredItemIds, itemId]);
           const occupiedSlots = equippedSlotIds(db, heroId);
           const others = occupiedSlots.filter((slot) => slot !== slotId);
           if (slotId === ONE_HAND_SLOT_ID && !handOccupancy(others).canEquipOneHand) {
@@ -496,19 +535,20 @@ export function createRepository(db) {
         if (seenSlots.has(slotId)) throw new Error("装备槽位重复");
         if (seenInstances.has(instanceId)) throw new Error("同一物品不能装备到多个槽位");
         seenSlots.add(slotId); seenInstances.add(instanceId);
-        const row = db.prepare(`SELECT i.slot item_slot FROM hero_inventory hi
+        const row = db.prepare(`SELECT i.id item_id,i.slot item_slot FROM hero_inventory hi
           JOIN item_instances ii ON ii.id=hi.item_instance_id JOIN items i ON i.id=ii.item_id
           WHERE hi.hero_id=? AND hi.item_instance_id=?`).get(Number(heroId), instanceId);
         if (!row) throw new Error("物品不在该角色仓库");
         const itemSlot = equipSlotIdForItemSlot(row.item_slot);
         const fits = itemSlot === baseSlot || (itemSlot === ONE_HAND_SLOT_ID && (baseSlot === "right_hand" || baseSlot === "left_hand"));
         if (!fits) throw new Error("物品与装备槽位不匹配");
-        return { slotId, baseSlot, instanceId };
+        return { slotId, baseSlot, instanceId, itemId: Number(row.item_id) };
       });
       const occupied = rows.map((row) => row.baseSlot);
       if (occupied.includes("two_hands") && occupied.some((slot) => slot === "right_hand" || slot === "left_hand")) throw new Error("双手装备与左右手装备冲突");
       db.exec("BEGIN IMMEDIATE");
       try {
+        assertUniqueEquipment(heroId, rows.map((row) => row.itemId));
         db.prepare("DELETE FROM hero_equipment WHERE hero_id=?").run(Number(heroId));
         db.prepare("UPDATE hero_inventory SET is_equipped=0,equip_slot=NULL WHERE hero_id=?").run(Number(heroId));
         const equip = db.prepare("INSERT INTO hero_equipment(hero_id,equip_slot,item_instance_id) VALUES(?,?,?)");
@@ -543,6 +583,7 @@ export function createRepository(db) {
       if (occupied.includes("two_hands") && occupied.some((slot) => slot === "right_hand" || slot === "left_hand")) throw new Error("双手装备与左右手装备冲突");
       db.exec("BEGIN IMMEDIATE");
       try {
+        assertUniqueEquipment(heroId, rows.map((row) => row.itemId));
         db.prepare("DELETE FROM hero_equipment WHERE hero_id=?").run(Number(heroId));
         db.prepare("UPDATE hero_inventory SET is_equipped=0,equip_slot=NULL WHERE hero_id=?").run(Number(heroId));
         const createInstance = db.prepare("INSERT INTO item_instances(item_id) VALUES(?)");
@@ -581,6 +622,7 @@ export function createRepository(db) {
       });
       db.exec("BEGIN IMMEDIATE");
       try {
+        assertUniqueEquipment(heroId, rows.map((row) => row.itemId));
         db.prepare("DELETE FROM hero_equipment WHERE hero_id=?").run(Number(heroId));
         db.prepare("UPDATE hero_inventory SET is_equipped=0,equip_slot=NULL WHERE hero_id=?").run(Number(heroId));
         const createInstance = db.prepare("INSERT INTO item_instances(item_id) VALUES(?)");
@@ -914,6 +956,25 @@ export function createRepository(db) {
       return randomUUID();
     },
 
+    /** 同一次探索的战斗索引与地城记录一起提交；失败时清理其专属展示文件。 */
+    withBattleReportTransaction(reportGroupId, callback) {
+      const destination = join(reportDirectory, `dungeon-${reportGroupId}.json`);
+      if (existsSync(destination)) throw new Error("战报分组已存在");
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = callback();
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        try { db.exec("ROLLBACK"); } finally {
+          for (const path of [destination, `${destination}.tmp`, `${destination}.bak`]) {
+            if (existsSync(path)) unlinkSync(path);
+          }
+        }
+        throw error;
+      }
+    },
+
     insertBattleRun(run) {
       mkdirSync(reportDirectory, { recursive: true });
       const filename = `dungeon-${run.reportGroupId ?? randomUUID()}.json`;
@@ -1031,25 +1092,5 @@ export function createRepository(db) {
       return db.prepare(`SELECT * FROM dungeon_runs WHERE id = ?${scope}`).get(...(userId == null ? [Number(id)] : [Number(id), Number(userId)]));
     },
 
-    /** 唯一性账本：已掉落记录与当前持有记录分离。 */
-    markUniqueDropped(scope, ownerKey, itemKey) {
-      db.prepare(`INSERT INTO uniqueness_ledger (scope, owner_key, item_key, dropped_ever, held)
-        VALUES (?,?,?,1,0)
-        ON CONFLICT(scope, owner_key, item_key) DO UPDATE SET dropped_ever = 1, updated_at = CURRENT_TIMESTAMP`)
-        .run(scope, ownerKey, itemKey);
-    },
-
-    setUniqueHeld(scope, ownerKey, itemKey, held) {
-      db.prepare(`INSERT INTO uniqueness_ledger (scope, owner_key, item_key, dropped_ever, held)
-        VALUES (?,?,?,0,?)
-        ON CONFLICT(scope, owner_key, item_key) DO UPDATE SET held = excluded.held, updated_at = CURRENT_TIMESTAMP`)
-        .run(scope, ownerKey, itemKey, held ? 1 : 0);
-    },
-
-    isUniqueDropped(scope, ownerKey, itemKey) {
-      const row = db.prepare("SELECT dropped_ever FROM uniqueness_ledger WHERE scope=? AND owner_key=? AND item_key=?")
-        .get(scope, ownerKey, itemKey);
-      return Boolean(row?.dropped_ever);
-    },
   };
 }

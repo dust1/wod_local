@@ -9,8 +9,7 @@ import { stableHash } from "../game/replay/envelope.mjs";
 import { renderEvents } from "../game/events/render.mjs";
 import { createDisplayBattleReport } from "../game/events/display-report.mjs";
 import { POSITION_LABELS } from "../game/domain/positions.mjs";
-import { deriveUnit } from "../game/engine/unit.mjs";
-import { heroRowToUnit, planRowToDomain } from "./hero-service.mjs";
+import { planRowToDomain } from "./hero-service.mjs";
 import { actionSettingsDto, actionSettingsToBattlePlan, ACTION_PHASES } from "./action-settings-service.mjs";
 import { buildCharacterInstance } from "./character-instance-service.mjs";
 import { encountersForDungeon, battlesForFloor } from "../gamedata/overrides/dungeon-encounters.mjs";
@@ -195,13 +194,21 @@ export function summonTemplateForCommand(repository, instance, skillId, itemIds,
 
 function attachCalledItemEffects(plan, instance, catalog, repository, root) {
   if (!plan) return plan;
-  const items = new Map((instance.equippedItems ?? []).map((item) => [String(item.itemId), item]));
+  const items = new Map();
+  for (const item of instance.equippedItems ?? []) {
+    const key = String(item.itemId);
+    if (!items.has(key)) items.set(key, []);
+    items.get(key).push(item);
+  }
   const sets = new Map((instance.itemSets ?? []).map((set) => [set.setName, set]));
   const skillIdByName = new Map([...catalog.skills.values()].map((skill) => [skill.name, skill.id]));
   const enrich = (command) => {
     const itemIds = command.itemIds ?? (command.itemId == null ? [] : [command.itemId]);
-    const selected = itemIds.map(String).map((id) => items.get(id)).filter(Boolean);
-    command.calledItems = selected.map((item) => ({ id: String(item.itemId), name: item.name ?? String(item.itemId), setName: item.setName ?? null }));
+    const selected = itemIds.map(String).map((id) => items.get(id)?.[0]).filter(Boolean);
+    command.calledItems = selected.map((item) => ({
+      id: String(item.itemId), name: item.name ?? String(item.itemId), setName: item.setName ?? null,
+      instances: items.get(String(item.itemId)).map((entry) => ({ instanceId: entry.instanceId, ...entry.useLimits })),
+    }));
     command.itemEffects = selected.flatMap((item) => (item.targetEffects ?? []).map((effect, index) => combatEffect(effect, "item", item.itemId, index, skillIdByName)));
     const selectedSetNames = [...new Set(selected.map((item) => item.setName).filter(Boolean))];
     command.setEffects = selectedSetNames.flatMap((name) => (sets.get(name)?.targetEffects ?? []).map((effect, index) => combatEffect(effect, "itemSet", name, index, skillIdByName)));
@@ -223,14 +230,14 @@ function attachCalledItemEffects(plan, instance, catalog, repository, root) {
 //
 // 探索分两步，都以同一条 dungeon_runs 记录为载体：
 //   1. 创建（本阶段已实现）：把「账号全部角色 + 各自行动设置 + 所选地城」固化为战斗规则输入。
-//   2. 结算（下一阶段）：战斗引擎读取该输入，按角色设置决定站位与技能释放顺序，回填结果与奖励。
+//   2. 模拟：战斗引擎读取该输入，按角色设置决定站位与技能释放顺序，回填战斗结果。
 // 这样战报记录在点击探索的瞬间就可见，且战斗规则输入不随后续设置变更而漂移。
 
 /** 探索记录状态。 */
 export const EXPLORATION_STATUS = Object.freeze({
   pending: "pending", // 记录已创建，战斗尚未执行
   running: "running", // 引擎正在执行（保留给异步结算）
-  completed: "completed", // 战斗已执行，结果与奖励已回填
+  completed: "completed", // 战斗已执行；奖励是否结算由 rewards.settled 单独表示
 });
 
 export const EXPLORATION_INPUT_VERSION = 2;
@@ -285,12 +292,10 @@ function encounterSummary(dungeonId) {
 }
 
 /** 单个角色的战斗规则输入：站位、行动设置、技能与派生资源上限。 */
-function heroExplorationEntry(repository, hero, leaderHeroId, instance = null) {
+function heroExplorationEntry(repository, hero, leaderHeroId, instance) {
   const heroSkills = repository.listHeroSkills(hero.id);
   const actionSettings = actionSettingsDto(repository.getHeroActionSettings(hero.id));
   const position = actionSettings.defaultLayer?.position ?? "rear";
-  const unit = heroRowToUnit(hero, { heroSkills, position });
-  const derived = deriveUnit(unit);
   return {
     heroId: hero.id,
     name: hero.name,
@@ -300,9 +305,9 @@ function heroExplorationEntry(repository, hero, leaderHeroId, instance = null) {
     isLeader: hero.id === leaderHeroId,
     position,
     positionLabel: positionLabel(position),
-    healthMax: instance?.derived.healthMax.effective ?? derived.healthMax,
-    manaMax: instance?.derived.manaMax.effective ?? derived.manaMax,
-    initiative: instance?.derived.initiative.effective ?? derived.initiative,
+    healthMax: instance.derived.healthMax.effective,
+    manaMax: instance.derived.manaMax.effective,
+    initiative: instance.derived.initiative.effective,
     skills: heroSkills.map((entry) => ({
       skillId: entry.skill_id,
       baseLevel: entry.base_level,
@@ -310,18 +315,18 @@ function heroExplorationEntry(repository, hero, leaderHeroId, instance = null) {
     })),
     actionSettings,
     actionSummary: actionSettingsSummary(actionSettings),
-    characterSnapshot: instance ? {
+    characterSnapshot: {
       attributes: instance.effectiveAttributes,
       derived: Object.fromEntries(Object.entries(instance.derived).map(([key, value]) => [key, { exact: value.exact, effective: value.effective }])),
       combat: instance.combat,
       skills: instance.skills.map((skill) => ({ skillId: skill.skillId, name: skill.name, level: skill.liveLevel })),
       equippedItems: instance.equippedItems,
       warnings: instance.warnings,
-    } : null,
+    },
   };
 }
 
-function unitFromCharacterInstance(hero, instance, settings) {
+function unitFromCharacterInstance(hero, instance, position) {
   const attributes = { ...instance.effectiveAttributes };
   const healthMax = Number(instance.derived.healthMax.effective);
   const manaMax = Number(instance.derived.manaMax.effective);
@@ -345,7 +350,7 @@ function unitFromCharacterInstance(hero, instance, settings) {
     side: "attacker",
     kind: "hero",
     level: instance.heroLevel,
-    position: settings.defaultLayer.position,
+    position,
     attributes,
     baseStatDefaults: {
       healthMax: healthMax - attributes.constitution * 3 - attributes.strength * 2,
@@ -392,7 +397,7 @@ export function createDungeonExploration({ repository, catalog, root = process.c
       hero,
       settings,
       instance,
-      unit: unitFromCharacterInstance(hero, instance, settings),
+      unit: unitFromCharacterInstance(hero, instance, settings.defaultLayer.position),
       // 缺少持久化设置与“保存了一份空设置”是两种状态；前者必须在战斗中提示无法行动。
       plan: settingsRow ? attachCalledItemEffects(actionSettingsToBattlePlan(settings, hero.id), instance, catalog, repository, root) : null,
     };
@@ -419,112 +424,117 @@ export function createDungeonExploration({ repository, catalog, root = process.c
 
   const seedBase = String(seed ?? `${Date.now()}-${leader.id}`);
   const reportGroupId = repository.createBattleReportGroup();
-  const ledger = new EffectLedger({ idPrefix: `d${dungeon.id}` });
-  const carried = new Map(members.map(({ unit }) => [unit.id, { health: unit.health, mana: unit.mana, alive: true }]));
-  const levels = [];
-  const dungeonEvents = [];
-  let roundOffset = 0;
-  let result = "victory";
-  let battleCount = 0;
+  // 技能目录在一次探索中不变；同层多场战斗共用同一份定义。
+  const battleSkills = battleSkillDefinitions(catalog, repository, root);
+  return repository.withBattleReportTransaction(reportGroupId, () => {
+    const itemUsage = new Map();
+    const ledger = new EffectLedger({ idPrefix: `d${dungeon.id}` });
+    const carried = new Map(members.map(({ unit }) => [unit.id, { health: unit.health, mana: unit.mana, alive: true }]));
+    const levels = [];
+    const dungeonEvents = [];
+    let roundOffset = 0;
+    let result = "victory";
+    let battleCount = 0;
 
-  for (let floorNumber = 1; floorNumber <= floorLimit; floorNumber += 1) {
-    const battles = battlesForFloor(dungeon.id, floorNumber);
-    if (battles.length === 0) break;
-    const floorBattles = [];
-    let floorResult = "victory";
-    for (let index = 0; index < battles.length; index += 1) {
-      const encounter = battles[index];
-      const partyUnits = members.map(({ unit }) => {
-        const resource = carried.get(unit.id);
-        return { ...unit, health: resource?.health ?? unit.health, mana: resource?.mana ?? unit.mana, alive: resource?.alive !== false };
-      });
-      const initialState = {
-        battleId: `${dungeon.id}#${floorNumber}.${index + 1}`,
-        dungeonName: dungeon.name,
-        floorNumber,
-        battleIndex: index + 1,
-        battleName: encounter.name,
-        units: [...partyUnits, ...encounterUnits(encounter)],
-        preRoundOrder: members.map(({ hero }) => String(hero.id)),
-      };
-      const battlePlans = Object.fromEntries(members.map(({ hero, plan }) => [String(hero.id), plan]));
-      const battleSeed = `${seedBase}:${floorNumber}.${index + 1}`;
-      const battleInput = {
-        initialState,
-        battlePlans,
-        skills: battleSkillDefinitions(catalog, repository, root),
-        skillIds: [...catalog.skills.keys()],
-        rulesetVersion: RULESET_VERSION,
-        contentVersion: catalog.contentVersion,
-        randomSeed: battleSeed,
-        roundOffset,
-        maxRounds,
-      };
-      const battleResult = simulateBattle({ ...battleInput, effectLedger: ledger, policies });
-      roundOffset = battleResult.finalState.round;
-      for (const member of members) {
-        const after = battleResult.finalState.units.find((unit) => unit.id === String(member.hero.id));
-        if (after) carried.set(after.id, { health: after.health, mana: after.mana, alive: after.alive });
-      }
-      const battleId = repository.insertBattleRun({
-        reportGroupId,
-        heroId: leader.id,
-        report: createDisplayBattleReport({
-          dungeonName: `${dungeon.name} - ${encounter.name}`,
+    for (let floorNumber = 1; floorNumber <= floorLimit; floorNumber += 1) {
+      const battles = battlesForFloor(dungeon.id, floorNumber);
+      if (battles.length === 0) break;
+      const floorBattles = [];
+      let floorResult = "victory";
+      for (let index = 0; index < battles.length; index += 1) {
+        const encounter = battles[index];
+        const partyUnits = members.map(({ unit }) => {
+          const resource = carried.get(unit.id);
+          return { ...unit, health: resource?.health ?? unit.health, mana: resource?.mana ?? unit.mana, alive: resource?.alive !== false };
+        });
+        const initialState = {
+          battleId: `${dungeon.id}#${floorNumber}.${index + 1}`,
+          dungeonName: dungeon.name,
+          floorNumber,
+          battleIndex: index + 1,
+          battleName: encounter.name,
+          units: [...partyUnits, ...encounterUnits(encounter)],
+          preRoundOrder: members.map(({ hero }) => String(hero.id)),
+        };
+        const battlePlans = Object.fromEntries(members.map(({ hero, plan }) => [String(hero.id), plan]));
+        const battleSeed = `${seedBase}:${floorNumber}.${index + 1}`;
+        const battleInput = {
+          initialState,
+          battlePlans,
+          skills: battleSkills,
+          skillIds: [...catalog.skills.keys()],
+          rulesetVersion: RULESET_VERSION,
+          contentVersion: catalog.contentVersion,
+          randomSeed: battleSeed,
+          roundOffset,
+          maxRounds,
+        };
+        const battleResult = simulateBattle({ ...battleInput, effectLedger: ledger, itemUsage, policies });
+        roundOffset = battleResult.finalState.round;
+        for (const member of members) {
+          const after = battleResult.finalState.units.find((unit) => unit.id === String(member.hero.id));
+          if (after) carried.set(after.id, { health: after.health, mana: after.mana, alive: after.alive });
+        }
+        const battleId = repository.insertBattleRun({
+          reportGroupId,
+          heroId: leader.id,
+          report: createDisplayBattleReport({
+            dungeonName: `${dungeon.name} - ${encounter.name}`,
+            battleName: encounter.name,
+            result: battleResult.finalState.result,
+            roundCount: battleResult.finalState.round,
+            levelNumber: floorNumber,
+            events: battleResult.events,
+          }),
+        });
+        battleCount += 1;
+        floorBattles.push({
+          battleId,
+          battleIndex: index + 1,
           battleName: encounter.name,
           result: battleResult.finalState.result,
-          roundCount: battleResult.finalState.round,
-          levelNumber: floorNumber,
-          events: battleResult.events,
-        }),
-      });
-      battleCount += 1;
-      floorBattles.push({
-        battleId,
-        battleIndex: index + 1,
-        battleName: encounter.name,
-        result: battleResult.finalState.result,
-        rounds: battleResult.finalState.round,
-      });
-      if (battleResult.finalState.result !== "victory") {
-        floorResult = battleResult.finalState.result;
-        result = floorResult;
-        break;
+          rounds: battleResult.finalState.round,
+        });
+        if (battleResult.finalState.result !== "victory") {
+          floorResult = battleResult.finalState.result;
+          result = floorResult;
+          break;
+        }
       }
+      levels.push({ floor: floorNumber, result: floorResult, battleIds: floorBattles.map((battle) => battle.battleId), battles: floorBattles });
+      dungeonEvents.push({ type: "LevelEnded", level: floorNumber, round: roundOffset, result: floorResult, battleCount: floorBattles.length });
+      if (floorResult !== "victory") break;
     }
-    levels.push({ floor: floorNumber, result: floorResult, battleIds: floorBattles.map((battle) => battle.battleId), battles: floorBattles });
-    dungeonEvents.push({ type: "LevelEnded", level: floorNumber, round: roundOffset, result: floorResult, battleCount: floorBattles.length });
-    if (floorResult !== "victory") break;
-  }
-  dungeonEvents.push({ type: "DungeonEnded", round: roundOffset, result, floorCount: levels.length, battleCount });
-  const rewards = {
-    settled: true,
-    experience: 0,
-    gold: 0,
-    byHero: members.map(({ hero }) => ({ heroId: hero.id, experience: 0, gold: 0 })),
-    note: "奖励公式尚未确认，当前仅完成战斗结算",
-  };
+    dungeonEvents.push({ type: "DungeonEnded", round: roundOffset, result, floorCount: levels.length, battleCount });
+    const rewards = {
+      settled: false,
+      experience: 0,
+      gold: 0,
+      byHero: members.map(({ hero }) => ({ heroId: hero.id, experience: 0, gold: 0 })),
+      note: "配装与战斗模拟不发放探索奖励",
+    };
 
-  const dungeonRunId = repository.insertDungeonRun({
-    heroId: leader.id,
-    dungeonId: dungeon.id,
-    dungeonName: dungeon.name,
-    seed: seedBase,
-    rulesetVersion: RULESET_VERSION,
-    contentVersion: catalog.contentVersion,
-    result,
-    status: EXPLORATION_STATUS.completed,
-    floorCount: levels.length,
-    battleCount,
-    partyCount: input.party.length,
-    levels,
-    events: dungeonEvents,
-    effects: ledger.snapshot(),
-    input,
-    rewards,
+    const dungeonRunId = repository.insertDungeonRun({
+      heroId: leader.id,
+      dungeonId: dungeon.id,
+      dungeonName: dungeon.name,
+      seed: seedBase,
+      rulesetVersion: RULESET_VERSION,
+      contentVersion: catalog.contentVersion,
+      result,
+      status: EXPLORATION_STATUS.completed,
+      floorCount: levels.length,
+      battleCount,
+      partyCount: input.party.length,
+      levels,
+      events: dungeonEvents,
+      effects: ledger.snapshot(),
+      input,
+      rewards,
+    });
+
+    return getDungeonRunDetail(repository, dungeonRunId, userId);
   });
-
-  return getDungeonRunDetail(repository, dungeonRunId, userId);
 }
 
 /** 把遭遇配置转换为防御方单位。 */
@@ -556,6 +566,8 @@ function prepareContext({ repository, catalog, heroId, dungeonId, planName }) {
   const planRow = planName ? repository.getPlan(heroId, planName) : repository.listPlans(heroId)[0];
   if (!planRow) return { error: "planNotFound" };
   const plan = planRowToDomain(planRow);
+  const instance = buildCharacterInstance({ repository, catalog, root: process.cwd(), heroId });
+  if (instance) attachCalledItemEffects(plan, instance, catalog, repository, process.cwd());
 
   const heroSkills = repository.listHeroSkills(heroId);
   const skillIds = [...new Set([...heroSkills.map((entry) => entry.skill_id), ...catalog.skills.keys()])];
@@ -565,7 +577,7 @@ function prepareContext({ repository, catalog, heroId, dungeonId, planName }) {
     const definition = allBattleSkills[id];
     if (definition) skills[id] = definition;
   }
-  return { heroRow, dungeon, plan, heroSkills, skills, skillIds };
+  return { heroRow, dungeon, plan, instance, skills };
 }
 
 /** 运行一层中的全部战斗，并把结果写入战斗表。 */
@@ -579,12 +591,9 @@ function runFloor({ repository, catalog, context, floorNumber, state, seedBase, 
   for (let index = 0; index < battles.length; index += 1) {
     const battle = battles[index];
     const battleRoundOffset = state.roundOffset;
-    const heroUnit = heroRowToUnit(context.heroRow, {
-      heroSkills: context.heroSkills,
-      position: context.plan.defaultPlan.position,
-      health: state.carriedHealth,
-      mana: state.carriedMana,
-    });
+    const heroUnit = unitFromCharacterInstance(context.heroRow, context.instance, context.plan.defaultPlan.position);
+    if (state.carriedHealth != null) heroUnit.health = state.carriedHealth;
+    if (state.carriedMana != null) heroUnit.mana = state.carriedMana;
     const initialState = {
       battleId: `${context.dungeon.id}#${floorNumber}.${index + 1}`,
       dungeonName: context.dungeon.name,
@@ -607,6 +616,7 @@ function runFloor({ repository, catalog, context, floorNumber, state, seedBase, 
       maxRounds,
       roundOffset: battleRoundOffset,
       effectLedger: state.ledger,
+      itemUsage: state.itemUsage,
       policies,
     });
 
@@ -668,11 +678,13 @@ export function runDungeonFloor({ repository, catalog, heroId, dungeonId, planNa
   const reportGroupId = repository.createBattleReportGroup();
   const state = {
     ledger: new EffectLedger({ idPrefix: `d${dungeonId}` }),
+    itemUsage: new Map(),
     roundOffset: 0,
     carriedHealth: null,
     carriedMana: null,
   };
-  const floor = runFloor({ repository, catalog, context, floorNumber, state, seedBase, reportGroupId, policies, maxRounds });
+  const floor = repository.withBattleReportTransaction(reportGroupId, () =>
+    runFloor({ repository, catalog, context, floorNumber, state, seedBase, reportGroupId, policies, maxRounds }));
   if (floor.result === "skipped") return { error: "noEncounter" };
   return {
     dungeonId,
@@ -698,103 +710,106 @@ export function runDungeon({ repository, catalog, heroId, dungeonId, planName, m
   if (context.error) return { error: context.error };
   const seedBase = String(seed ?? `${Date.now()}-${heroId}`);
   const reportGroupId = repository.createBattleReportGroup();
-  const state = {
-    ledger: new EffectLedger({ idPrefix: `d${dungeonId}` }),
-    roundOffset: 0,
-    carriedHealth: null,
-    carriedMana: null,
-  };
+  return repository.withBattleReportTransaction(reportGroupId, () => {
+    const state = {
+      ledger: new EffectLedger({ idPrefix: `d${dungeonId}` }),
+      itemUsage: new Map(),
+      roundOffset: 0,
+      carriedHealth: null,
+      carriedMana: null,
+    };
 
-  const levels = [];
-  const events = [];
-  let result = "victory";
-  let floorCount = 0;
-  let battleCount = 0;
+    const levels = [];
+    const events = [];
+    let result = "victory";
+    let floorCount = 0;
+    let battleCount = 0;
 
-  for (let floorNumber = 1; floorNumber <= maxFloor; floorNumber += 1) {
-    const floor = runFloor({ repository, catalog, context, floorNumber, state, seedBase, reportGroupId, policies, maxRounds });
-    if (floor.result === "skipped") break;
-    floorCount += 1;
-    battleCount += floor.battles.length;
-    levels.push({
-      floor: floorNumber,
-      result: floor.result,
-      battleIds: floor.battles.map((battle) => battle.battleId),
-      battles: floor.battles,
-    });
+    for (let floorNumber = 1; floorNumber <= maxFloor; floorNumber += 1) {
+      const floor = runFloor({ repository, catalog, context, floorNumber, state, seedBase, reportGroupId, policies, maxRounds });
+      if (floor.result === "skipped") break;
+      floorCount += 1;
+      battleCount += floor.battles.length;
+      levels.push({
+        floor: floorNumber,
+        result: floor.result,
+        battleIds: floor.battles.map((battle) => battle.battleId),
+        battles: floor.battles,
+      });
+      events.push({
+        seq: events.length + 1,
+        type: "LevelEnded",
+        round: state.roundOffset,
+        phase: "RoundEnded",
+        level: floorNumber,
+        result: floor.result,
+        battleCount: floor.battles.length,
+      });
+      if (floor.result !== "victory") {
+        result = floor.result;
+        break;
+      }
+    }
+
     events.push({
       seq: events.length + 1,
-      type: "LevelEnded",
+      type: "DungeonEnded",
       round: state.roundOffset,
       phase: "RoundEnded",
-      level: floorNumber,
-      result: floor.result,
-      battleCount: floor.battles.length,
+      result,
+      resultLabel: result === "victory" ? "胜利" : result === "defeat" ? "失败" : "未决",
+      floorCount,
+      battleCount,
     });
-    if (floor.result !== "victory") {
-      result = floor.result;
-      break;
-    }
-  }
 
-  events.push({
-    seq: events.length + 1,
-    type: "DungeonEnded",
-    round: state.roundOffset,
-    phase: "RoundEnded",
-    result,
-    resultLabel: result === "victory" ? "胜利" : result === "defeat" ? "失败" : "未决",
-    floorCount,
-    battleCount,
-  });
-
-  const dungeonRunId = repository.insertDungeonRun({
-    heroId: context.heroRow.id,
-    dungeonId,
-    dungeonName: context.dungeon.name,
-    seed: seedBase,
-    rulesetVersion: RULESET_VERSION,
-    contentVersion: catalog.contentVersion,
-    result,
-    // 同步结算的历史路径：一条记录即一次完整地城运行，只涉及单英雄。
-    status: EXPLORATION_STATUS.completed,
-    partyCount: 1,
-    floorCount,
-    battleCount,
-    levels: levels.map((level) => ({
-      floor: level.floor,
-      result: level.result,
-      battleIds: level.battleIds,
-      battles: level.battles.map((battle) => ({
-        battleId: battle.battleId,
-        battleName: battle.battleName,
-        result: battle.result,
-        rounds: battle.rounds,
+    const dungeonRunId = repository.insertDungeonRun({
+      heroId: context.heroRow.id,
+      dungeonId,
+      dungeonName: context.dungeon.name,
+      seed: seedBase,
+      rulesetVersion: RULESET_VERSION,
+      contentVersion: catalog.contentVersion,
+      result,
+      // 同步结算的历史路径：一条记录即一次完整地城运行，只涉及单英雄。
+      status: EXPLORATION_STATUS.completed,
+      partyCount: 1,
+      floorCount,
+      battleCount,
+      levels: levels.map((level) => ({
+        floor: level.floor,
+        result: level.result,
+        battleIds: level.battleIds,
+        battles: level.battles.map((battle) => ({
+          battleId: battle.battleId,
+          battleName: battle.battleName,
+          result: battle.result,
+          rounds: battle.rounds,
+        })),
       })),
-    })),
-    events,
-    effects: state.ledger.snapshot(),
-  });
+      events,
+      effects: state.ledger.snapshot(),
+    });
 
-  return {
-    dungeonRunId,
-    dungeonId,
-    dungeonName: context.dungeon.name,
-    planName: context.plan.name,
-    seed: seedBase,
-    contentVersion: catalog.contentVersion,
-    result,
-    status: EXPLORATION_STATUS.completed,
-    floorCount,
-    battleCount,
-    levels,
-    events,
-    effects: state.ledger.snapshot(),
-    finalHero: { health: state.carriedHealth, mana: state.carriedMana },
-    // 兼容单层视图
-    floorNumber: levels[0]?.floor ?? 1,
-    battles: levels.flatMap((level) => level.battles),
-  };
+    return {
+      dungeonRunId,
+      dungeonId,
+      dungeonName: context.dungeon.name,
+      planName: context.plan.name,
+      seed: seedBase,
+      contentVersion: catalog.contentVersion,
+      result,
+      status: EXPLORATION_STATUS.completed,
+      floorCount,
+      battleCount,
+      levels,
+      events,
+      effects: state.ledger.snapshot(),
+      finalHero: { health: state.carriedHealth, mana: state.carriedMana },
+      // 兼容单层视图
+      floorNumber: levels[0]?.floor ?? 1,
+      battles: levels.flatMap((level) => level.battles),
+    };
+  });
 }
 
 export function listBattles(repository, limit = 20, userId) {

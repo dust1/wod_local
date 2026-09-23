@@ -11,7 +11,7 @@ import { defaultFailureCostPolicy } from "../commands/cursor.mjs";
 import { defaultWoundThresholdPolicy, defaultHealingPriorityPolicy } from "../commands/healing.mjs";
 import { randomWithinPositionPolicy, stableWithinPositionPolicy } from "../targeting/select.mjs";
 import { defaultEvadeAttributePolicy } from "../engine/simulate.mjs";
-import { DEFAULT_NO_DURABILITY_DAMAGE_TYPES, SLOT_CONFLICTS, ONE_HAND_SLOT_ID } from "../domain/item.mjs";
+import { SLOT_CONFLICTS, ONE_HAND_SLOT_ID } from "../domain/item.mjs";
 
 /**
  * @typedef {object} PolicyEntry
@@ -44,13 +44,11 @@ export const POLICY_REGISTRY = [
   { id: "healingPriority:default-healing-priority", evidenceLevel: "D", experimental: true, description: "治疗触发器 1 至 5 优先级，英雄优先", ruleQuestionId: "healing-formula", impl: defaultHealingPriorityPolicy },
   { id: "withinPosition:random-within-position", evidenceLevel: "D", experimental: true, description: "站位内随机排序", ruleQuestionId: "within-position-order", impl: randomWithinPositionPolicy },
   { id: "withinPosition:stable-input-order", evidenceLevel: "D", experimental: true, description: "站位内保持输入顺序", ruleQuestionId: "within-position-order", impl: stableWithinPositionPolicy },
-  { id: "durability:default-no-damage-types", evidenceLevel: "D", experimental: true, description: "心理与毒素伤害不损坏装备", ruleQuestionId: "durability-damage", impl: { id: "durability:default-no-damage-types", types: DEFAULT_NO_DURABILITY_DAMAGE_TYPES } },
   { id: "slots:two-hands-conflict", evidenceLevel: "C", experimental: true, description: "双手与左右手互斥", ruleQuestionId: "hand-slot-occupancy", impl: { id: "slots:two-hands-conflict", conflicts: SLOT_CONFLICTS } },
   { id: "slots:one-hand-occupancy", evidenceLevel: "C", experimental: true, description: "单手物品占用一只空手，与双手物品互斥", ruleQuestionId: "hand-slot-occupancy", impl: { id: "slots:one-hand-occupancy", oneHand: ONE_HAND_SLOT_ID } },
   { id: "modifier:randomFlat", evidenceLevel: "D", experimental: true, description: "随机固定加值借用 RollPolicy 求值", ruleQuestionId: "random-flat-range", impl: { id: "modifier:randomFlat" } },
   { id: "heal:damage-mean-reuse", evidenceLevel: "D", experimental: true, description: "治疗量借用伤害平均值公式，治疗命中规则未确认", ruleQuestionId: "healing-formula", impl: { id: "heal:damage-mean-reuse" } },
   { id: "battleEnd:last-side-standing", evidenceLevel: "D", experimental: true, description: "一方全部倒下即结束战斗", ruleQuestionId: "defeat-escape-victory", impl: { id: "battleEnd:last-side-standing" } },
-  { id: "uniqueness:dropped-ever-ledger", evidenceLevel: "C", experimental: true, description: "已掉落唯一记录与当前持有记录分离", ruleQuestionId: "loot-and-uniqueness", impl: { id: "uniqueness:dropped-ever-ledger" } },
   { id: "defaultPlan:first-available-skill", evidenceLevel: "D", experimental: true, description: "无显式方案的单位按已知技能生成确定性兜底方案", ruleQuestionId: null, impl: { id: "defaultPlan:first-available-skill" } },
 ];
 

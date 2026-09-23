@@ -13,6 +13,7 @@ import { MARKET_ITEM_PRICE, marketDto, purchaseMarketItem } from "../application
 import { validateHeroInput } from "../application/auth-service.mjs";
 import { deleteHero } from "../application/hero-service.mjs";
 import { createBaseCharacter } from "../game/domain/attributes.mjs";
+import { equippedItemPool } from "../application/character-instance-service.mjs";
 
 /** 删除测试库；Windows 上 WAL 句柄释放略有延迟，因此带重试。 */
 function removeDatabase(path) {
@@ -213,6 +214,47 @@ test("同部位新装备顶替旧装备，旧实例回到角色仓库", () => {
   assert.equal(items.find((item) => item.instanceId === before.instanceId).equipped, false, "被顶替的旧武器应回到角色仓库");
   assert.equal(db.prepare("SELECT count(*) c FROM hero_equipment WHERE hero_id=? AND equip_slot='right_hand'").get(hero.id).c, 1, "右手部位只能有一件装备");
   assert.equal(items.length, 2, "实例数量不因换装变化");
+  cleanup(db, path);
+});
+
+test("英雄唯一按角色、队伍唯一按账号限制已穿戴物品", () => {
+  const { db, path, repository } = freshRepository();
+  const owner = createUser(db, repository, "uniqueness_owner");
+  const outsider = createUser(db, repository, "uniqueness_outsider");
+  const first = repository.createHero(owner.id, validateHeroInput({ name: "角色甲", raceId: "dinturan", professionId: "adventurer", gender: "male" }));
+  const second = repository.createHero(owner.id, validateHeroInput({ name: "角色乙", raceId: "dinturan", professionId: "adventurer", gender: "female" }));
+  const other = repository.createHero(outsider.id, validateHeroInput({ name: "角色丙", raceId: "dinturan", professionId: "adventurer", gender: "male" }));
+  const firstHeroUnique = grantItem(db, first.id, 31);
+  const duplicateHeroUnique = grantItem(db, first.id, 31);
+  const secondHeroUnique = grantItem(db, second.id, 31);
+  repository.replaceHeroEquipment(first.id, owner.id, [{ slotId: "pocket:1", instanceId: firstHeroUnique }]);
+  assert.throws(() => repository.replaceHeroEquipment(first.id, owner.id, [
+    { slotId: "pocket:1", instanceId: firstHeroUnique }, { slotId: "pocket:2", instanceId: duplicateHeroUnique },
+  ]), /英雄唯一/);
+  repository.replaceHeroEquipment(second.id, owner.id, [{ slotId: "pocket:1", instanceId: secondHeroUnique }]);
+
+  const firstTeamUnique = grantItem(db, first.id, 2);
+  const secondTeamUnique = grantItem(db, second.id, 2);
+  const otherTeamUnique = grantItem(db, other.id, 2);
+  repository.replaceHeroEquipment(first.id, owner.id, [{ slotId: "pocket:1", instanceId: firstTeamUnique }]);
+  assert.throws(() => repository.replaceHeroEquipment(second.id, owner.id, [{ slotId: "pocket:1", instanceId: secondTeamUnique }]), /队伍唯一/);
+  assert.equal(repository.listHeroInventory(second.id, owner.id).find((row) => row.item_instance_id === secondTeamUnique).is_equipped, 0);
+  repository.replaceHeroEquipment(other.id, outsider.id, [{ slotId: "pocket:1", instanceId: otherTeamUnique }]);
+  repository.replaceHeroEquipment(first.id, owner.id, []);
+  repository.replaceHeroEquipment(second.id, owner.id, [{ slotId: "pocket:1", instanceId: secondTeamUnique }]);
+  cleanup(db, path);
+});
+
+test("物品详情的三类使用次数进入角色实例且不改动库存", () => {
+  const { db, path, repository } = freshRepository();
+  const user = createUser(db, repository, "item_limits_user");
+  const hero = repository.createHero(user.id, validateHeroInput({ name: "测试角色", raceId: "dinturan", professionId: "adventurer", gender: "male" }));
+  const instanceId = grantItem(db, hero.id, 82);
+  repository.setItemEquipped(hero.id, user.id, instanceId, true);
+  const item = equippedItemPool({ repository, root: resolve("."), heroId: hero.id, userId: user.id })
+    .find((entry) => entry.instanceId === instanceId);
+  assert.deepEqual(item.useLimits, { remainingCharges: null, usesPerDungeon: 2, usesPerBattle: 1 });
+  assert.equal(repository.listHeroInventory(hero.id, user.id).length, 1);
   cleanup(db, path);
 });
 

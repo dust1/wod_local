@@ -29,9 +29,6 @@ import {
   parseMarker,
   markerApplies,
   canUseItem,
-  createUniquenessLedger,
-  blocksTeamUniqueDrop,
-  canDamageDurability,
   handOccupancy,
   ONE_HAND_SLOT_ID,
   ONE_HAND_SLOT_LABEL,
@@ -269,24 +266,7 @@ test("使用次数限制与每战斗一次不能多倍消耗", () => {
   assert.deepEqual(canUseItem({ totalCharges: 3, remainingCharges: 0 }), { allowed: false, reason: "noCharges" });
   assert.deepEqual(canUseItem({ usesPerBattle: 1 }, { usedThisBattle: 1 }), { allowed: false, reason: "usesPerBattleExhausted" });
   assert.deepEqual(canUseItem({ usesPerDungeon: 2 }, { usedThisDungeon: 2 }), { allowed: false, reason: "usesPerDungeonExhausted" });
-  assert.deepEqual(canUseItem({ usesPerBattle: 1 }, { multiplier: 2 }), { allowed: false, reason: "oncePerBattleCannotBeMultiplied" });
-});
-
-test("唯一性：已掉落记录与当前持有分离", () => {
-  const ledger = createUniquenessLedger();
-  ledger.markDropped("team-1:item-relic");
-  ledger.hold("hero-1", "item-relic");
-  assert.equal(ledger.holds("hero-1", "item-relic"), true);
-  assert.equal(blocksTeamUniqueDrop(ledger, "team-1:item-relic"), true);
-  ledger.release("hero-1", "item-relic");
-  assert.equal(ledger.holds("hero-1", "item-relic"), false);
-  // 摧毁后队伍仍然无法再次获得正常掉落
-  assert.equal(blocksTeamUniqueDrop(ledger, "team-1:item-relic"), true);
-  assert.deepEqual(ledger.snapshot().droppedEver, ["team-1:item-relic"]);
-});
-
-test("心理与毒素伤害不造成装备损坏", () => {
-  assert.equal(canDamageDurability("切割伤害"), true);
-  assert.equal(canDamageDurability("心理伤害"), false);
-  assert.equal(canDamageDurability("毒素伤害"), false);
+  assert.deepEqual(canUseItem({ usesPerBattle: 1 }, { multiplier: 2 }), { allowed: false, reason: "usesPerBattleExhausted" });
+  assert.deepEqual(canUseItem({ remainingCharges: 1 }, { multiplier: 2 }), { allowed: false, reason: "noCharges" });
+  assert.deepEqual(canUseItem({ usesPerDungeon: 3 }, { usedThisDungeon: 2, multiplier: 2 }), { allowed: false, reason: "usesPerDungeonExhausted" });
 });

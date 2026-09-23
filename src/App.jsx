@@ -14,7 +14,6 @@ import TeamInventoryPage from "./pages/inventory/TeamInventoryPage.jsx";
 import DungeonPage from "./pages/dungeon/DungeonPage.jsx";
 import ReportPage from "./pages/reports/ReportPage.jsx";
 import BattlesPage from "./pages/reports/BattlesPage.jsx";
-import ReportImportPage from "./pages/reports/ReportImportPage.jsx";
 import MarketPage from "./pages/market/MarketPage.jsx";
 import RulesPage from "./pages/rules/RulesPage.jsx";
 import SkillLibraryPage from "./pages/library/SkillLibraryPage.jsx";
@@ -60,6 +59,13 @@ export function App() {
   useEffect(() => {
     if (page === "heroInventory" && activeHero?.id) heroInventory.reload();
   }, [page, activeHero?.id]);
+
+  // 装备候选也依赖当前属性、技能和仓库；离开页面期间这些值可能已变化。
+  useEffect(() => {
+    if (page === "equipment" && activeHero?.id) heroEquipment.reload();
+  }, [page, activeHero?.id]);
+
+  useEffect(() => { setInventoryError(null); }, [activeHero?.id]);
 
   const navigate = useCallback((next) => {
     setPage(next);
@@ -179,6 +185,7 @@ export function App() {
         await request(`/api/team-inventory/${item.instanceId}/to-hero/${activeHero.id}`, { method: "POST" });
       }
       heroInventory.reload();
+      heroEquipment.reload();
       teamInventory.reload();
       detail.reload();
     } catch (cause) {
@@ -319,8 +326,7 @@ export function App() {
           />
         )}
         {page === "battles" && <BattlesPage onOpen={openBattle} />}
-        {page === "market" && <MarketPage hero={activeHero} onPurchased={() => { heroes.reload(); heroInventory.reload(); detail.reload(); }} />}
-        {page === "reportImport" && <ReportImportPage />}
+        {page === "market" && <MarketPage hero={activeHero} onPurchased={() => { heroes.reload(); heroInventory.reload(); heroEquipment.reload(); detail.reload(); }} />}
         {page === "rules" && <RulesPage />}
         {page === "library" && <SkillLibraryPage />}
         {page === "overview" && <OverviewPage meta={meta.data} hero={activeHero} detail={detail.data} />}

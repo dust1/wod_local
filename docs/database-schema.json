@@ -2119,7 +2119,7 @@
       ]
     },
     "uniqueness_ledger": {
-      "description": "",
+      "description": "历史遗留空表；模拟器不产生掉落，保留结构以兼容现有数据库，运行时代码不读写。",
       "columns": [
         {
           "name": "scope",

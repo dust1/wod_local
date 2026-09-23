@@ -13,6 +13,7 @@ import { hashPassword, validateCredentials, validateHeroInput, verifyPassword } 
 import { actionSettingsDto, actionSettingsToBattlePlan, normalizeActionSettings, saveActionSettings } from "../application/action-settings-service.mjs";
 import { buildCharacterInstance } from "../application/character-instance-service.mjs";
 import { itemCandidatesFor, validateSkillItemSelections } from "../application/skill-item-service.mjs";
+import { DUNGEON_ENCOUNTERS } from "../gamedata/overrides/dungeon-encounters.mjs";
 
 const testRoot = mkdtempSync(join(tmpdir(), "local-wod-application-"));
 const templatePath = resolve("tests", "fixtures", "runtime-template.sqlite");
@@ -34,6 +35,16 @@ function cleanup() {
   for (const suffix of ["", "-wal", "-shm"]) rmSync(`${testDbPath}${suffix}`, { force: true });
   rmSync(testReportPath, { recursive: true, force: true });
 }
+
+test("所有本地遭遇只使用同一套训练木桩数值", () => {
+  const units = DUNGEON_ENCOUNTERS.flatMap((dungeon) => dungeon.battles.flatMap((battle) => battle.units));
+  assert.ok(units.length >= 3);
+  for (const unit of units) {
+    assert.equal(unit.name, "训练木桩");
+    assert.deepEqual(unit.attributes, units[0].attributes);
+    assert.deepEqual(unit.skills, units[0].skills);
+  }
+});
 
 test("用户密码安全存储且英雄严格按账号隔离", () => {
   const { db, repository } = freshRepository();
@@ -484,6 +495,19 @@ test("运行一层地城并持久化多场战斗", () => {
   cleanup();
 });
 
+test("旧单英雄入口使用角色实例的战斗资源", () => {
+  const { db, repository } = freshRepository();
+  const catalog = loadCatalog();
+  const instance = buildCharacterInstance({ repository, catalog, root: resolve("."), heroId: 1 });
+  const run = runDungeonFloor({ repository, catalog, heroId: 1, dungeonId: "rowdy-tavern", seed: "instance-resource" });
+  const report = repository.getBattleRun(run.battles[0].battleId).report;
+  const status = report.rounds[0].preRound.teams.attacker.find((unit) => unit.unitId === "1");
+  assert.equal(status.healthMax, instance.derived.healthMax.effective);
+  assert.equal(status.resource, instance.derived.manaMax.effective);
+  db.close();
+  cleanup();
+});
+
 test("历史战斗只保存四阶段展示快照", () => {
   const { db, repository } = freshRepository();
   const catalog = loadCatalog();
@@ -673,19 +697,6 @@ test("地城运行在同种子下可复现", () => {
   cleanup();
 });
 
-test("唯一性账本区分已掉落与当前持有", () => {
-  const { db, repository } = freshRepository();
-  repository.markUniqueDropped("team", "team-1", "item-relic");
-  assert.equal(repository.isUniqueDropped("team", "team-1", "item-relic"), true);
-  repository.setUniqueHeld("team", "team-1", "item-relic", true);
-  repository.setUniqueHeld("team", "team-1", "item-relic", false);
-  // 摧毁后仍然无法再次获得正常掉落
-  assert.equal(repository.isUniqueDropped("team", "team-1", "item-relic"), true);
-  db.close();
-  cleanup();
-  assert.equal(existsSync(testDbPath), false);
-});
-
 /** 测试夹具：写入一把带「剑」类别的物品并直接装备到右手。 */
 function equipFixtureSword(db, heroId) {
   db.prepare("INSERT OR REPLACE INTO items(id,name,slot,min_level,max_level,active) VALUES(?,?,?,?,?,1)").run(24058, "赫伯特叔叔的旧剑", "右手", 0, 40);
@@ -775,7 +786,10 @@ test("探索使用账号全部角色与行动设置完成战斗结算并固化�
   assert.equal(listed[0].dungeonRunId, run.dungeonRunId);
   assert.equal(listed[0].status, "completed");
   assert.equal(listed[0].partyCount, 2);
-  assert.equal(listed[0].rewards.settled, true);
+  assert.equal(listed[0].rewards.settled, false, "模拟不发放奖励");
+  assert.match(listed[0].rewards.note, /不发放探索奖励/);
+  assert.equal(repository.getHero(leader.id, user.id).current_experience, leader.current_experience);
+  assert.equal(repository.getHero(leader.id, user.id).gold, leader.gold);
   db.close();
   cleanup();
 });
@@ -795,6 +809,62 @@ test("探索记录的战斗规则输入不随之后的行动设置变更而漂�
   assert.equal(frozen.actionSummary.commandCounts.mainRound, 1, "快照应保留创建时的指令");
   db.close();
   cleanup();
+});
+
+test("探索写入中断时回滚战报索引并清理展示文件", () => {
+  for (const failure of ["battleRun", "dungeonRun"]) {
+    const { db, repository } = freshRepository();
+    const catalog = loadCatalog();
+    const { user, leader } = explorationFixture(db, repository, catalog);
+    let battleWrites = 0;
+    const failingRepository = new Proxy(repository, {
+      get(target, key) {
+        if (key === "insertBattleRun") return (run) => {
+          battleWrites += 1;
+          const id = target.insertBattleRun(run);
+          if (failure === "battleRun") throw new Error("模拟战报写入失败");
+          return id;
+        };
+        if (key === "insertDungeonRun" && failure === "dungeonRun") return () => { throw new Error("模拟地城记录写入失败"); };
+        return target[key];
+      },
+    });
+    assert.throws(() => createDungeonExploration({
+      repository: failingRepository, catalog, userId: user.id,
+      dungeonId: "rowdy-tavern", heroId: leader.id, seed: `rollback-${failure}`,
+    }), /模拟.*写入失败/);
+    assert.ok(battleWrites >= 1);
+    assert.equal(repository.listBattleRuns().length, 0);
+    assert.equal(repository.listDungeonRuns(20, user.id).length, 0);
+    assert.equal(readdirSync(testReportPath).filter((name) => name.endsWith(".json")).length, 0);
+    db.close();
+    cleanup();
+  }
+});
+
+test("旧地城入口写入失败时不留下部分战报", () => {
+  for (const run of [runDungeonFloor, runDungeon]) {
+    const { db, repository } = freshRepository();
+    const catalog = loadCatalog();
+    const failingRepository = new Proxy(repository, {
+      get(target, key) {
+        if (key === "insertBattleRun") return (battle) => {
+          target.insertBattleRun(battle);
+          throw new Error("模拟战报写入失败");
+        };
+        return target[key];
+      },
+    });
+    assert.throws(() => run({
+      repository: failingRepository, catalog, heroId: 1,
+      dungeonId: "rowdy-tavern", seed: "legacy-rollback",
+    }), /模拟战报写入失败/);
+    assert.equal(repository.listBattleRuns().length, 0);
+    assert.equal(repository.listDungeonRuns().length, 0);
+    assert.equal(readdirSync(testReportPath).filter((name) => name.endsWith(".json")).length, 0);
+    db.close();
+    cleanup();
+  }
 });
 
 test("探索在缺少角色、地城或遭遇配置时返回结构化错误", () => {

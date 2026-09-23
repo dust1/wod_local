@@ -135,7 +135,7 @@ test("前端路由页面独立于 App 协调器", () => {
     "pages/heroes/HeroesPage.jsx", "pages/heroes/CreateHeroPage.jsx", "pages/attributes/AttributesPage.jsx",
     "pages/skills/SkillsPage.jsx", "pages/equipment/EquipmentPage.jsx", "pages/inventory/HeroInventoryPage.jsx",
     "pages/inventory/TeamInventoryPage.jsx", "pages/settings/SettingsPage.jsx", "pages/dungeon/DungeonPage.jsx",
-    "pages/reports/ReportPage.jsx", "pages/reports/BattlesPage.jsx", "pages/reports/ReportImportPage.jsx",
+    "pages/reports/ReportPage.jsx", "pages/reports/BattlesPage.jsx",
     "pages/market/MarketPage.jsx", "pages/library/SkillLibraryPage.jsx", "pages/rules/RulesPage.jsx",
     "pages/overview/OverviewPage.jsx", "pages/admin/SummonConfigPage.jsx", "pages/admin/SummonActionConfigPage.jsx",
   ];

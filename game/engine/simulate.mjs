@@ -29,6 +29,7 @@ import { DEFAULT_ROUNDING_POLICY } from "../formulas/calculation.mjs";
 import { meleePositionHitPercent, isMeleeAttackType } from "../domain/positions.mjs";
 import { resolveModifier } from "../modifiers/pipeline.mjs";
 import { resolveMaxTargets } from "../domain/skill.mjs";
+import { canUseItem } from "../domain/item.mjs";
 
 export const RULESET_VERSION = "wod-complete-rules-v3";
 export const RANDOM_ALGORITHM_VERSION = "mulberry32-fnv1a-wod-dice-v2";
@@ -99,6 +100,8 @@ export function simulateBattle(input) {
   resetEventSequence();
   const seed = String(input.randomSeed ?? "seed-0");
   const skills = toSkillMap(input.skills);
+  const dungeonItemUsage = input.itemUsage ?? new Map();
+  const battleItemUsage = new Map();
   const policies = input.policies ?? {};
   const rollPolicy = policies.rollPolicy ?? createDiceRollPolicy();
   const roundingPolicy = policies.roundingPolicy ?? DEFAULT_ROUNDING_POLICY;
@@ -765,6 +768,41 @@ export function simulateBattle(input) {
     return skillManaCost(actor, skill, { effectLedger: ledger, roundingPolicy });
   }
 
+  function availableCalledItems(actor, command) {
+    const selected = [];
+    for (const item of command.calledItems ?? []) {
+      if (!Array.isArray(item.instances) || item.instances.length === 0) continue;
+      const multiplier = command.itemMultiplier ?? 1;
+      const choice = item.instances.find((instance) => {
+        const key = `${actor.id}:${instance.instanceId}`;
+        const state = dungeonItemUsage.get(key);
+        return canUseItem({
+          remainingCharges: state?.remainingCharges ?? instance.remainingCharges,
+          usesPerDungeon: instance.usesPerDungeon,
+          usesPerBattle: instance.usesPerBattle,
+        }, { usedThisDungeon: state?.used ?? 0, usedThisBattle: battleItemUsage.get(key) ?? 0, multiplier }).allowed;
+      });
+      if (!choice) return null;
+      selected.push({ item, instance: choice, multiplier });
+    }
+    return selected;
+  }
+
+  function spendCalledItems(actor, selected) {
+    for (const { item, instance, multiplier } of selected) {
+      const key = `${actor.id}:${instance.instanceId}`;
+      const previous = dungeonItemUsage.get(key);
+      const remainingCharges = previous?.remainingCharges ?? instance.remainingCharges;
+      const nextCharges = remainingCharges == null ? null : remainingCharges - multiplier;
+      dungeonItemUsage.set(key, { used: (previous?.used ?? 0) + multiplier, remainingCharges: nextCharges });
+      battleItemUsage.set(key, (battleItemUsage.get(key) ?? 0) + multiplier);
+      if (nextCharges != null) emit("ItemChargeSpent", {
+        actorId: actor.id, itemId: item.id, itemInstanceId: instance.instanceId,
+        itemName: item.name, amount: multiplier, chargesAfter: nextCharges,
+      });
+    }
+  }
+
   /**
    * 执行一次技能。返回 { ok, reason }。
    */
@@ -808,6 +846,8 @@ export function simulateBattle(input) {
     // 法力不足时顺位到下一条不需要法力的指令，而不是把这次行动浪费在必然失败的尝试上。
     const cost = targetless ? null : manaCostFor(actor, skill);
     if (cost && actor.mana < cost.applied) return { ok: false, reason: "insufficientMana", skipped: true };
+    const calledItems = targetless ? [] : availableCalledItems(actor, command);
+    if (calledItems === null) return { ok: false, reason: "noCharges", skipped: true };
 
     emit("SkillAttempted", {
       actorId: actor.id,
@@ -848,6 +888,8 @@ export function simulateBattle(input) {
     // 失败尝试也必须先产生 SkillAttempted。展示战报以该事件划分行动；若在
     // 发出事件前返回，后续 SkillFailed 会被错误地归到上一条成功行动上。
     if (targetless) return { ok: false, reason: "noTargets" };
+
+    spendCalledItems(actor, calledItems);
 
     if (cost) {
       actor.mana -= cost.applied;

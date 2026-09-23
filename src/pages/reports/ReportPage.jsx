@@ -64,13 +64,13 @@ function ReportListPage({ onOpen, highlightRunId, notice }) {
   return (
     <section>
       <h1>战报</h1>
-      <p className="subtle">每次探索生成一条记录：先把战斗规则输入（账号全部角色 + 行动设置 + 地城）固化下来，再由战斗引擎回填结果与奖励。</p>
+      <p className="subtle">每次探索生成一条记录：固化账号全部角色、行动设置与地城输入，再由战斗引擎模拟战斗。模拟不发放经验、金币或物品。</p>
       {notice ? <p className="positive" role="status">{notice}</p> : null}
       {message ? <p className="positive" role="status">{message}</p> : null}
       {runs.length === 0 && <p className="subtle">还没有战报记录。先在地城页面选择一个地城开始探索。</p>}
       {runs.length > 0 && (
         <table className="wod-table wide">
-          <thead><tr><th>#</th><th>地城</th><th>状态</th><th>队伍</th><th>结果</th><th>经验 / 金币</th><th>创建时间</th><th>操作</th></tr></thead>
+          <thead><tr><th>#</th><th>地城</th><th>状态</th><th>队伍</th><th>结果</th><th>创建时间</th><th>操作</th></tr></thead>
           <tbody>
             {runs.map((entry) => (
               <tr key={entry.dungeonRunId} className={entry.dungeonRunId === highlightRunId ? "report-row-current" : undefined}>
@@ -79,7 +79,6 @@ function ReportListPage({ onOpen, highlightRunId, notice }) {
                 <td>{explorationStatusLabel(entry.status)}</td>
                 <td>{entry.partyCount > 0 ? `${entry.partyCount} 名角色` : "—"}</td>
                 <td>{runResultLabel(entry.result)}</td>
-                <td>{entry.rewards?.settled ? `${entry.rewards.experience ?? 0} / ${entry.rewards.gold ?? 0}` : entry.status === "completed" ? "未记录" : "未结算"}</td>
                 <td>{entry.createdAt}</td>
                 <td className="report-actions">
                   <WodButton onClick={() => onOpen(entry.dungeonRunId)}>查看详情</WodButton>

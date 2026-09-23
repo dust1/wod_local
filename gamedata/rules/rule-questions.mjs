@@ -40,7 +40,7 @@ export const RULE_QUESTIONS = [
     id: "multi-action-initiative-decay",
     question: "多次行动的先攻衰减公式",
     status: "hypothesis",
-    evidence: [{ kind: "report", ref: "docs/wodlog/4907363/level1.html", note: "先攻 X 第 n 步行动 / 共 m 步" }],
+    evidence: [{ kind: "implementation", ref: "game/policies/registry.mjs", note: "本地实验策略，未声称与原版衰减公式一致" }],
     experimentalPolicy: "decay:linear-decay-0.5",
   },
   {
@@ -90,7 +90,8 @@ export const RULE_QUESTIONS = [
     question: "装备损坏概率、损坏量和免损伤害类型全集",
     status: "open",
     evidence: [{ kind: "textbook", ref: "§9.2", note: "只确认心理与毒素伤害不损坏装备" }],
-    experimentalPolicy: "durability:default-no-damage-types",
+    experimentalPolicy: null,
+    note: "本地配装与战斗模拟不处理装备耐久；仅保留原版资料问题记录。",
   },
   {
     id: "wound-thresholds",
@@ -143,13 +144,6 @@ export const RULE_QUESTIONS = [
     experimentalPolicy: null,
   },
   {
-    id: "loot-and-uniqueness",
-    question: "掉落、唯一物品重掉、战利品、经验和金币结算",
-    status: "open",
-    evidence: [{ kind: "textbook", ref: "§9.4" }],
-    experimentalPolicy: "uniqueness:dropped-ever-ledger",
-  },
-  {
     id: "pvp-pve-differences",
     question: "PVP 与 PVE 的规则差异",
     status: "open",
@@ -191,9 +185,6 @@ export const VERIFIED_RULES = Object.freeze([
   { id: "item-requirement-chain", ref: "§9.6", test: "tests/commands.test.mjs" },
   { id: "az-markers", ref: "§9.7", test: "tests/commands.test.mjs" },
   { id: "deterministic-replay", ref: "§21", test: "tests/engine.test.mjs" },
-  { id: "report-dom-semantics", ref: "§19.1", test: "tests/report-import.test.mjs" },
-  { id: "report-golden-counts", ref: "§2.3", test: "tests/report-import.test.mjs" },
-  { id: "report-phase-order", ref: "§11.1", test: "tests/report-import.test.mjs" },
   { id: "etl-talent-classification", ref: "§4.5", test: "tests/catalog-assets.test.mjs" },
   { id: "etl-no-silent-missing-fields", ref: "§4.6", test: "tests/catalog-assets.test.mjs" },
 ]);

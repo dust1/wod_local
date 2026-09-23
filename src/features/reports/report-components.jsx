@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { WodButton } from "../../components/ui.jsx";
 import { isActionLevelFailure } from "../../../game/commands/cursor.mjs";
 
 const EFFECT_TARGET_LABELS = {
@@ -301,48 +300,5 @@ function ExplorationSnapshot({ run }) {
     </>
   );
 }
-
-function ReportPage({ run, onOpen, onBack, highlightRunId }) {
-  if (!run) return <ReportListPage onOpen={onOpen} highlightRunId={highlightRunId} />;
-  const pending = run.status === "pending";
-  const levels = run.levels ?? [{ floor: run.floorNumber, result: run.result, battles: run.battles }];
-  return (
-    <section className="classic-report-page">
-      <p><WodButton onClick={onBack}>返回战报列表</WodButton></p>
-      <h1>战报：{run.dungeonName}</h1>
-      {pending
-        ? <ExplorationSnapshot run={run} />
-        : (
-          <>
-            <div className="report-meta">
-              方案 {run.planName}　种子 {run.seed}　内容版本 {run.contentVersion}　层数 {run.floorCount ?? levels.length}　战斗数 {run.battles.length}
-              　结果 <span className={run.result === "victory" ? "victory" : "warning"}>{runResultLabel(run.result)}</span>
-              {run.finalHero && <>　剩余体力 {run.finalHero.health}　剩余法力 {run.finalHero.mana}</>}
-            </div>
-            {run.events?.length > 0 && (
-              <div className="battle-report dungeon-events">
-                {run.events.map((event) => (
-                  <div className={`report-row report-${event.type}`} key={event.seq}>
-                    <strong>{event.type === "LevelEnded" ? "层结算" : "地城结算"}</strong>
-                    <span>{event.type === "LevelEnded"
-                      ? `第 ${event.level} 层完成：${event.result === "victory" ? "胜利" : event.result}（${event.battleCount} 场战斗）`
-                      : `地城结束：${event.resultLabel}（${event.floorCount} 层 / ${event.battleCount} 场战斗）`}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {levels.map((level) => (
-              <div key={level.floor}>
-                <h2>第 {level.floor} 层</h2>
-                {level.battles.map((battle) => <BattleReport key={battle.battleId} battle={battle} />)}
-              </div>
-            ))}
-            <p className="subtle">战报由领域事件渲染，渲染层不决定战斗结果。</p>
-          </>
-        )}
-    </section>
-  );
-}
-
 
 export { BattleReport, ExplorationSnapshot };

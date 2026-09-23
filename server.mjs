@@ -1,7 +1,6 @@
 // 本地 HTTP API 与 Vite 中间件。设计文档 §3、§20.1。
 // 这一层只做协议转换：解析请求 → 调用 application 用例 → 序列化响应。
 import { createServer } from "node:http";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { createServer as createViteServer } from "vite";
@@ -13,8 +12,6 @@ import { addHeroResource, advanceHeroProfession, deleteHero, heroDetailDto, hero
 import { buildCharacterInstance } from "./application/character-instance-service.mjs";
 import { runDungeon, runDungeonFloor, createDungeonExploration, listBattles, getBattleDetail, listDungeonRuns, getDungeonRunDetail, deleteDungeonRun, RULESET_VERSION } from "./application/battle-service.mjs";
 import { RULE_QUESTIONS } from "./gamedata/rules/rule-questions.mjs";
-import { importBattleReport } from "./game/replay/import-report.mjs";
-import { renderEvents } from "./game/events/render.mjs";
 import { hashPassword, newSession, validateCredentials, validateHeroInput, verifyPassword } from "./application/auth-service.mjs";
 import { loadSkillDetail } from "./application/skill-detail-service.mjs";
 import { heroInventoryDto, heroInventoryPageDto, itemDetailDto, teamInventoryDto } from "./application/inventory-service.mjs";
@@ -722,64 +719,6 @@ async function api(request, response, url) {
       seed: body.seed,
     });
     return result.error ? json(response, 400, { error: result.error }) : json(response, 200, result);
-  }
-
-  if (method === "GET" && path === "/api/reports/available") {
-    // 只读列举 docs/wodlog 下的原始战报，供导入诊断使用。
-    const logRoot = resolve(root, "docs", "wodlog");
-    const found = [];
-    if (existsSync(logRoot)) {
-      for (const entry of readdirSync(logRoot, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        for (const file of readdirSync(resolve(logRoot, entry.name))) {
-          if (!file.endsWith(".html")) continue;
-          const full = resolve(logRoot, entry.name, file);
-          found.push({ reportId: entry.name, file, sizeBytes: statSync(full).size });
-        }
-      }
-    }
-    return json(response, 200, { files: found });
-  }
-
-  if (method === "POST" && path === "/api/reports/import") {
-    const body = await readJson(request);
-    const reportId = String(body.reportId ?? "");
-    const file = String(body.file ?? "");
-    if (!/^[A-Za-z0-9_-]+$/.test(reportId) || !/^[A-Za-z0-9_.-]+\.html$/.test(file)) {
-      return json(response, 400, { error: "非法的战报路径" });
-    }
-    const full = resolve(root, "docs", "wodlog", reportId, file);
-    if (!full.startsWith(resolve(root, "docs", "wodlog")) || !existsSync(full)) {
-      return json(response, 404, { error: "战报文件不存在" });
-    }
-    const html = readFileSync(full, "utf8");
-    const report = importBattleReport(html, { sourceFile: `${reportId}/${file}` });
-    return json(response, 200, {
-      sourceFile: report.sourceFile,
-      sourceFileHash: report.sourceFileHash,
-      dungeonName: report.dungeonName,
-      levelNumber: report.levelNumber,
-      counts: report.counts,
-      roundSummaries: report.rounds.map((round) => ({
-        round: round.round,
-        statusBlocks: round.statusBlocks.map((block) => ({ side: block.side, units: block.units.length })),
-        preRound: round.preRound.length,
-        regeneration: round.regeneration.length,
-        initiativeSkills: round.initiativeSkills.length,
-        scheduledActions: round.scheduledActions.length,
-        actions: round.actions.length,
-        manaCosts: round.manaCosts.length,
-        gains: round.gains.length,
-        losses: round.losses.length,
-      })),
-      events: report.events,
-      rendered: renderEvents(report.events),
-      parseWarnings: report.parseWarnings,
-      unparsedFragments: report.unparsedFragments,
-      roomEnds: report.roomEnds,
-      levelSuccess: report.levelSuccess,
-      rewards: report.rewards,
-    });
   }
 
   if (method === "POST" && path === "/api/catalog/reload") {

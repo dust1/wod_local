@@ -159,18 +159,6 @@ if (detailedSkill) {
   console.log(`✓ /api/skill-details ${detailedSkill.name}`);
 }
 
-const reports = await get("/api/reports/available");
-if (reports.files.length >= 2) {
-  console.log(`✓ /api/reports/available files=${reports.files.length}`);
-  const imported = await post("/api/reports/import", { reportId: "4907363", file: "level1.html" });
-  check(imported.rounds?.length !== 0 || imported.counts.raw.rep_round_headline === 6, "战报导入未识别回合");
-  check(imported.counts.raw.rep_action === 2074, `level1 原始行动节点数应为 2074，实际 ${imported.counts.raw.rep_action}`);
-  check(imported.counts.raw.rep_initiative === 2130, `level1 原始先攻节点数应为 2130，实际 ${imported.counts.raw.rep_initiative}`);
-  console.log(`✓ /api/reports/import level1 rounds=${imported.roundSummaries.length} actions=${imported.counts.raw.rep_action} warnings=${imported.parseWarnings.length}`);
-} else {
-  console.log("- 原始战报资料未安装，跳过导入冒烟");
-}
-
 const items = await get("/api/items?q=剑&limit=5");
 check(items.total > 1000, "物品索引未加载");
 console.log(`✓ /api/items total=${items.total} matched=${items.matched}`);
@@ -252,7 +240,7 @@ console.log(`✓ POST 探索记录 #${exploration.dungeonRunId} status=${explora
 const explorationDetail = await get(`/api/dungeons/runs/${exploration.dungeonRunId}`);
 check(explorationDetail.input.party.length === exploration.partyCount, "探索详情缺少队伍快照");
 check(explorationDetail.levels.length >= 1, "探索详情缺少层记录");
-check(explorationDetail.rewards.settled === true, "探索战斗完成后奖励状态应已结算");
+check(explorationDetail.rewards.settled === false, "配装模拟不应结算探索奖励");
 console.log(`✓ /api/dungeons/runs/${exploration.dungeonRunId} 详情 队伍=${explorationDetail.input.party.length} 战斗=${explorationDetail.battleCount}`);
 
 // 删除角色：物品全部移入团队仓库，角色从列表消失，战报与探索记录必须保留。

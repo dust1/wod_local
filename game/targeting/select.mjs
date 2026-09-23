@@ -7,7 +7,6 @@
 // - 同一站位内的目标排序规则待验证，因此通过策略注入。
 
 import { meleeTargetPriority, POSITION_LABELS } from "../domain/positions.mjs";
-import { isMeleeAttackType } from "../domain/positions.mjs";
 import { pickDeterministic } from "../policies/random.mjs";
 
 /** 单位是否可被选为目标。 */
@@ -64,10 +63,9 @@ export const randomWithinPositionPolicy = Object.freeze({
   },
 });
 
-/** 目标位置优先级：近战固定顺序；非近战由设置指定，缺省用固定顺序。 */
-export function targetPositionPriority({ actorPosition, attackType, configuredPriority }) {
+/** 有配置时按设置，否则使用固定站位顺序。 */
+export function targetPositionPriority({ actorPosition, configuredPriority }) {
   if (Array.isArray(configuredPriority) && configuredPriority.length > 0) return configuredPriority;
-  if (isMeleeAttackType(attackType)) return meleeTargetPriority(actorPosition);
   return meleeTargetPriority(actorPosition);
 }
 

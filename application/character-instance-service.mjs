@@ -86,6 +86,15 @@ export function equippedItemPool({ repository, root, heroId, userId, equippedInv
         // JSON 用 `-` 表示"无配合物品"，这里已与空集合统一处理。
         companionItemTypes: companionItemTypeNames(detail?.["需配合何物使用"]),
         setName: String(detail?.["所属套装"] ?? "").trim() || null,
+        useLimits: Object.fromEntries([
+          ["remainingCharges", "剩余使用次数"],
+          ["usesPerDungeon", "每地城可使用次数"],
+          ["usesPerBattle", "每战斗可使用次数"],
+        ].map(([key, label]) => {
+          const raw = detail?.["详细属性"]?.[label];
+          const value = raw == null || raw === "" ? Number.NaN : Number(raw);
+          return [key, Number.isSafeInteger(value) && value >= 0 ? value : null];
+        })),
         targetEffects: detail?.["作用在被此物品影响的目标上的效果"]
           ?? detail?.["作用在被影响的目标上的效果"]
           ?? [],
@@ -196,6 +205,7 @@ export function buildCharacterInstance({ repository, catalog, root, heroId, user
       companionItemTypes: item.companionItemTypes,
       setName: item.setName,
       targetEffects: item.targetEffects,
+      useLimits: item.useLimits,
       hasDetail: Boolean(item.detail),
       effectCount: item.detail?.["作用在物品持有者上的效果"]?.length ?? 0,
     })),

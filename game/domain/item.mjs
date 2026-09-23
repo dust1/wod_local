@@ -93,17 +93,6 @@ export function slotConflicts(slotId, occupiedSlots = []) {
 }
 
 /**
- * 耐久度。设计文档 §9.2：心理和毒素伤害不造成装备损坏。
- * 完整免损伤害类型表尚未确认（D 级），用显式实验参数表达。
- */
-export const DEFAULT_NO_DURABILITY_DAMAGE_TYPES = Object.freeze(["心理伤害", "毒素伤害"]);
-
-export function canDamageDurability(damageType, noDamageTypes = DEFAULT_NO_DURABILITY_DAMAGE_TYPES) {
-  if (!damageType) return true;
-  return !noDamageTypes.includes(damageType);
-}
-
-/**
  * 「需配合何物使用」的占位值。物品 JSON 在没有配合物品时写 `-`（不是空数组），
  * 全量 48564 份物品里有 44393 份是这种写法，且这是数据里唯一出现过的占位值。
  * 占位值必须与空集合等价：否则会生成一个永远选不到的配合物品下拉框，
@@ -222,62 +211,18 @@ export function markerApplies(marker, context = {}) {
 
 /**
  * 使用次数。设计文档 §9.3。
- * 每战斗只能使用一次的耗材不能用于多倍消耗技能。
+ * 三种使用上限按本次调用的消耗数量检查；无限制以 null 表示。
  */
 export function canUseItem(item, { usedThisBattle = 0, usedThisDungeon = 0, multiplier = 1 } = {}) {
-  if (item.totalCharges !== undefined && item.remainingCharges !== undefined && item.remainingCharges <= 0) {
+  if (!Number.isSafeInteger(multiplier) || multiplier < 1) return { allowed: false, reason: "invalidMultiplier" };
+  if (item.remainingCharges != null && item.remainingCharges < multiplier) {
     return { allowed: false, reason: "noCharges" };
   }
-  if (item.usesPerBattle !== undefined && usedThisBattle >= item.usesPerBattle) {
+  if (item.usesPerBattle != null && usedThisBattle + multiplier > item.usesPerBattle) {
     return { allowed: false, reason: "usesPerBattleExhausted" };
   }
-  if (item.usesPerDungeon !== undefined && usedThisDungeon >= item.usesPerDungeon) {
+  if (item.usesPerDungeon != null && usedThisDungeon + multiplier > item.usesPerDungeon) {
     return { allowed: false, reason: "usesPerDungeonExhausted" };
   }
-  if (item.usesPerBattle === 1 && multiplier > 1) {
-    return { allowed: false, reason: "oncePerBattleCannotBeMultiplied" };
-  }
   return { allowed: true };
-}
-
-/**
- * 唯一性。设计文档 §9.4：
- * “已掉落唯一记录”和“当前持有记录”必须分离。
- */
-export function createUniquenessLedger() {
-  const droppedEver = new Set();
-  const held = new Map();
-  return {
-    /** 记录一次掉落（历史事实，不可回滚）。 */
-    markDropped(key) {
-      droppedEver.add(key);
-    },
-    hasDropped(key) {
-      return droppedEver.has(key);
-    },
-    hold(ownerId, key) {
-      if (!held.has(ownerId)) held.set(ownerId, new Set());
-      held.get(ownerId).add(key);
-    },
-    holds(ownerId, key) {
-      return held.get(ownerId)?.has(key) ?? false;
-    },
-    release(ownerId, key) {
-      held.get(ownerId)?.delete(key);
-    },
-    snapshot() {
-      return {
-        droppedEver: [...droppedEver],
-        held: Object.fromEntries([...held].map(([owner, set]) => [owner, [...set]])),
-      };
-    },
-  };
-}
-
-/**
- * 队伍唯一装备若被摧毁，教材称该队无法再次获得其正常掉落。
- * 因此掉落判定只看 droppedEver，不看当前持有。
- */
-export function blocksTeamUniqueDrop(ledger, teamKey) {
-  return ledger.hasDropped(teamKey);
 }

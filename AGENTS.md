@@ -1,60 +1,37 @@
-# Repository Guidelines
+# 项目入口
 
-## Project Structure & Module Organization
+这是 WOD 的本地配装与战斗模拟工具，使用 Node.js ESM、React 19、Vite 6 和 SQLite。探索只产生模拟结果与战报，不发放经验、金币或物品，也不受地城等级、准备时间或重复探索次数限制。原版玩法参考 `docs/WOD教科书计划.docx`；当前行为以代码和测试为准，差异见 `docs/PROJECT_OVERVIEW.md`。不要把原版 WOD 尚未实现的机制当作本工具目标。
 
-Dependencies point inward only: `UI → application → game`. `game/` never imports React, HTTP, or SQLite.
+进入项目先读本文件、`docs/PROJECT_OVERVIEW.md`、`docs/ARCHITECTURE.md`、`docs/DEVELOPMENT_PLAN.md`，再读任务涉及的代码与测试。先运行 `git status`，保留用户未提交的改动；修改后检查 `git diff`。
 
-- `src/App.jsx` is the authenticated application coordinator: it owns cross-page hero/report state and composes the current hash route, but must not contain page implementations.
-- `src/pages/` contains one route-level component per visible hash URI, grouped by feature (`heroes/`, `attributes/`, `skills/`, `equipment/`, `inventory/`, `reports/`, and so on). Keep page-only state and requests in the corresponding page module.
-- `src/features/` contains UI reused by multiple pages: item dialogs/tables/search, skill detail components, and report rendering components. Route modules may import features; features must not import route modules.
-- `src/layout/` contains the persistent shell navigation, top bar, and right rail. `src/components/` contains small generic visual primitives. `src/api/client.js` is the shared HTTP request and `useApi` boundary.
-- `src/styles.css` and `src/attributes.css` remain the shared visual rules. Split CSS by feature only when ownership is unambiguous; do not duplicate selectors across page modules.
-- `game/` contains framework-independent game formulas and domain logic.
-  - `game/domain/` attributes, positions, phases, skills, items, effects.
-  - `game/formulas/` pure calculation functions plus `CalculationTrace`/`CalculatedNumber`.
-  - `game/modifiers/` modifier kinds and the percent-chain → flat → global-percent pipeline.
-  - `game/targeting/` candidate enumeration and target selection.
-  - `game/engine/` unit derivation and the round state machine (`simulateBattle`).
-  - `game/commands/` battle-plan model, command cursor, healing interruption.
-  - `game/events/` domain event types and the Chinese report renderer.
-  - `game/policies/` replaceable strategies (random, roll, rounding, initiative) and `registry.mjs`.
-  - `game/replay/` deterministic envelope, hashing, and report import.
-- `application/` use cases and transaction boundaries (`catalog-service`, `hero-service`, `battle-service`).
-- `infrastructure/persistence/` contains runtime SQL plus `database-contract.mjs`, which validates existing databases against `docs/database-schema.json`. Runtime code never creates or migrates schema.
-- `server.mjs` exposes the local HTTP API and reads the runtime database at `data/game.sqlite`.
-- `scripts/` contains read-only database inspection/verification, retained set-data import, smoke checks, and build helpers.
-- `gamedata/generated/` is ETL output (do not hand-edit); `gamedata/overrides/` holds human corrections that must cite evidence; `gamedata/rules/` holds the `RuleQuestion` registry.
-- `public/assets/wod/` stores extracted WOD visual assets. `worker/` and `.openai/` contain hosting support.
-- `tests/` contains Node test files; `docs/` contains rules, source reports, and design documentation.
+## 运行与验证
 
-## Build, Test, and Development Commands
+- `npm install`；`npm run db:verify` 校验 `data/game.sqlite` 与 `docs/database-schema.json`。
+- `npm run dev` 启动本地 API 与 Vite（默认 4173）；`npm run admin` 启动配置界面。
+- `npm test` 跑 Node 测试；`npm run build` 构建前端。涉及接口时再运行 `npm run test:api`。
+- 数据库运行时不自动建表或迁移；不得用测试覆盖运行库。
 
-- `npm install` installs the locked dependencies.
-- `npm run db:verify` validates `data/game.sqlite` against `docs/database-schema.json`, including tables, columns, indexes, foreign keys, format version, integrity, and foreign-key consistency.
-- `npm run db:inspect` prints the current database structure for review. It never updates the contract automatically.
-- `npm run dev -- --host 0.0.0.0 --port 4173` starts the API and Vite development server.
-- `npm run test:rules` runs formula, rule, engine, and application tests.
-- `npm test` runs every `tests/*.test.mjs` file.
-- `npm run test:api` boots the API in `--no-vite` mode and asserts every endpoint shape.
-- `npm run build` creates the production client and hosting artifacts under `dist/`.
-- `npm run test:sites` validates the generated hosting worker.
+## 代码地图与边界
 
-Notes for restricted environments: the test runner is invoked with `--test-isolation=none` so it does not spawn piped child processes, and `server.mjs --no-vite` serves the API only without loading esbuild.
+- `src/` 是界面和 HTTP 客户端；`server.mjs` 是协议入口。
+- `application/` 组织用例、校验和持久化调用；`game/` 放不依赖 HTTP、React、SQLite 的规则与战斗引擎。
+- `gamedata/generated/` 是导入生成内容，不手改；`gamedata/overrides/` 是有证据标记的本地修正；`infrastructure/persistence/` 管 SQLite。
+- `tests/` 覆盖规则、用例、数据契约和接口。资源在 `public/assets/wod/`。
 
-## Database Schema Maintenance
+使用 ESM、两空格缩进，变量/函数 camelCase、React 组件 PascalCase。注释解释原因。UI 不计算核心规则；同一规则只保留一个实现位置。先确认行为、影响范围和现有测试，再做小步修改、验证并勾选开发计划。新增内容先扩展现有配置和模块。
 
-`data/game.sqlite` and `tests/fixtures/runtime-template.sqlite` must both match `docs/database-schema.json`. A missing database or contract mismatch is a startup error; the application never creates, migrates, seeds, or repairs a database. After an approved manual schema change, increment `databaseFormatVersion`, update the JSON contract and test template, then run `npm run db:verify`, `npm test`, and `npm run test:api`. Back up and stop all writers before replacing the runtime database.
+配装遵守“英雄唯一”（单角色至多一件）和“队伍唯一”（单账号所有角色合计至多一件）。物品剩余次数仅在本次模拟中减少至零；每地城次数跨房间/楼层累计，每战斗次数在新房间重置。模拟不写回仓库次数，也不计算装备耐久。
 
-## Coding Style & Naming Conventions
+战斗对象统一为本地训练木桩；地城只组织模拟房间与战报，不追求原版怪物配置或数值。技能、物品效果仍按具体数据和证据完善。
 
-Use modern ECMAScript modules and two-space indentation. Prefer small pure functions for calculations and keep I/O at application boundaries. Use `camelCase` for variables and functions, `PascalCase` for React components, and descriptive kebab-case filenames for multiword modules. Preserve stable English IDs in storage while keeping Chinese names as display data. Do not duplicate formulas in UI components. Every C/D-level rule must live behind a replaceable policy registered in `game/policies/registry.mjs` and linked to a `RuleQuestion`.
+发现技能、物品效果或计算结果的具体差异时，再修改相关公式和代码；不把原版 HTML 战报导入作为核验流程。保留本地模拟战报与回放校验。
 
-For frontend changes, preserve the dependency direction `App → pages → features/components/api`; shared feature components must not reach back into `App.jsx`. Keep existing hash route identifiers stable unless a request explicitly includes a URL migration. Reuse `ItemDetailDialog`, skill effect components, and report components instead of creating page-local copies.
+## 防止膨胀
 
-## Testing Guidelines
-
-Use `node:test` and `node:assert/strict`. Name tests `*.test.mjs` and place rule tests near `tests/rules.test.mjs`. Cover formula boundaries, modifier order, rounding, deterministic replay, effect duration/delay/stacking, and database migrations. Every bug fix in game logic should include a regression test. `tests/rules.test.mjs` additionally asserts that documented A-level rules have tests and that experimental policies are registered.
-
-## Commit & Pull Request Guidelines
-
-No established Git history is available, so use Conventional Commit subjects such as `feat: add buff scheduler` or `fix: preserve hit-grade boundary`. Keep commits focused. Pull requests should explain behavior changes, list tests run, link relevant rule documentation or issues, and include screenshots for visible UI changes. Never commit credentials, temporary logs, the 1.9 GB source database, or generated SQLite journal files.
+1. 已有系统能完成的功能不新建系统；增加现有数据字段能解决的问题不新建对象体系。
+2. 已有模块加少量逻辑能解决的问题不新建 Manager；只有一个调用者的逻辑默认不建 Service；只有一个实现的行为默认不建 Interface。
+3. 不为未来可能的扩展预建复杂架构；同一种游戏规则必须有唯一实现位置，禁止复制已有业务规则。
+4. 新功能优先扩展已有数据驱动系统。新模块须能说清职责、为何现有模块不能负责、谁调用；否则不创建。
+5. 一项功能若需大量文件，重新检查设计。完成后检查重复代码、重复状态、新全局状态、双向依赖和无用中间层。
+6. 不为设计模式、文件数量或形式上的分层重构；不擅自升级技术栈、重写项目或改变未核实的 WOD 规则。
+7. 新增功能不是新增架构的理由。只有当前架构无法合理承载需求时，才允许增加新的架构概念。
