@@ -1,19 +1,10 @@
-import { useState } from "react";
 import { WodButton } from "../../components/ui.jsx";
 
 export default function DungeonPage({ hero, heroes = [], catalog, onExplore, running, error }) {
-  const [maxFloor, setMaxFloor] = useState(10);
   const hasParty = heroes.length > 0;
   return (
     <section>
       <h1>地城</h1>
-      <div className="form-grid">
-        <label>推进层数上限
-          <select value={maxFloor} onChange={(event) => setMaxFloor(Number(event.target.value))}>
-            {[1, 2, 3, 5, 10].map((value) => <option key={value} value={value}>{value} 层</option>)}
-          </select>
-        </label>
-      </div>
       <p className="subtle">
         点击探索会先创建一条战报记录：把本账号的全部角色（{hasParty ? heroes.map((entry) => entry.name).join("、") : "暂无角色"}）
         与各自的行动设置、所选地城一起固化为战斗规则输入，随后由战斗引擎结算。
@@ -30,7 +21,7 @@ export default function DungeonPage({ hero, heroes = [], catalog, onExplore, run
                 <WodButton
                   disabled={!dungeon.enabled || running || !hero || !hasParty}
                   title={dungeon.enabled ? "" : "本地未配置该地城的遭遇数据"}
-                  onClick={() => onExplore(dungeon.id, maxFloor)}
+                  onClick={() => onExplore(dungeon.id)}
                 >
                   {running ? "探索中" : "探索"}
                 </WodButton>

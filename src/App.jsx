@@ -211,7 +211,7 @@ export function App() {
    * 地城探索：用账号全部角色及各自行动设置同步结算地城并保存战报，
    * 然后回到战报列表，让玩家打开刚完成的探索结果。
    */
-  async function exploreDungeon(dungeonId, maxFloor) {
+  async function exploreDungeon(dungeonId) {
     if (!activeHero) return;
     setRunning(true);
     setRunError(null);
@@ -219,7 +219,7 @@ export function App() {
       const created = await request(`/api/dungeons/${encodeURIComponent(dungeonId)}/explore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ heroId: activeHero.id, maxFloor }),
+        body: JSON.stringify({ heroId: activeHero.id }),
       });
       setRun(null);
       setHighlightRunId(created.dungeonRunId ?? null);
