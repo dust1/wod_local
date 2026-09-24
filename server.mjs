@@ -15,6 +15,7 @@ import { RULE_QUESTIONS } from "./gamedata/rules/rule-questions.mjs";
 import { hashPassword, newSession, validateCredentials, validateHeroInput, verifyPassword } from "./application/auth-service.mjs";
 import { loadSkillDetail } from "./application/skill-detail-service.mjs";
 import { heroInventoryDto, heroInventoryPageDto, itemDetailDto, teamInventoryDto } from "./application/inventory-service.mjs";
+import { socketAncientRunes } from "./application/ancient-rune-service.mjs";
 import { applyHeroEquipment, equipHeroInventoryItem, heroEquipmentDto, itemEquipabilityConditions } from "./application/equipment-service.mjs";
 import { applyCharacterCard, characterCardPreview, exportCharacterCard } from "./application/character-card-service.mjs";
 import { marketDto, purchaseMarketItem } from "./application/market-service.mjs";
@@ -398,6 +399,20 @@ async function api(request, response, url) {
     } catch (error) { return json(response, 400, { error: error.message }); }
   }
   const equipMatch = path.match(/^\/api\/heroes\/(\d+)\/inventory\/(\d+)\/equip$/);
+  const runeMatch = path.match(/^\/api\/heroes\/(\d+)\/inventory\/(\d+)\/runes$/);
+  if (method === "POST" && runeMatch) {
+    try {
+      const body = await readJson(request);
+      const result = socketAncientRunes(repository, root, Number(runeMatch[1]), user.id, Number(runeMatch[2]), body.runeInstanceIds ?? []);
+      return json(response, 200, { ...result, inventory: heroInventoryPageDto(repository, root, Number(runeMatch[1]), user.id, catalog) });
+    } catch (error) { return json(response, 400, { error: error.message }); }
+  }
+  if (method === "DELETE" && runeMatch) {
+    try {
+      repository.clearSocketedRunes(Number(runeMatch[1]), user.id, Number(runeMatch[2]));
+      return json(response, 200, heroInventoryPageDto(repository, root, Number(runeMatch[1]), user.id, catalog));
+    } catch (error) { return json(response, 400, { error: error.message }); }
+  }
   if (method === "POST" && equipMatch) {
     try {
       const body = await readJson(request);

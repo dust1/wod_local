@@ -96,6 +96,16 @@
 .inventory-table td:nth-child(2) { color: #fff!important; }
 .inventory-table td:nth-child(3) { color: var(--gold)!important; white-space: nowrap; }
 .inventory-actions { display: flex; gap: 5px; white-space: nowrap; }
+.rune-dialog { width: min(900px, calc(100vw - 52px)); }
+.rune-dialog .skill-dialog-scroll > p { margin: 7px 0; }
+.rune-effects { margin-top: 18px; padding-top: 8px; border-top: 1px solid #5b501e; }
+.rune-effects h3, .rune-picker h3 { color: var(--gold); }
+.rune-effects h4 { margin: 10px 0 4px; }
+.rune-warning { color: #ffbc66; font-weight: 700; }
+.rune-picker { margin-top: 18px; border-top: 1px solid #5b501e; }
+.rune-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 6px; }
+.rune-options label { padding: 5px; background: rgba(67,61,48,.6); cursor: pointer; }
+.rune-options input { margin-right: 6px; }
 .equipment-page { max-width: 980px; }
 .equipment-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; border-bottom: 1px solid #5b501e; padding-bottom: 8px; }
 .equipment-heading h1 { margin-bottom: 3px; }

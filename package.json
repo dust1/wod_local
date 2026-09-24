@@ -11,6 +11,7 @@
     "summons:import-skills": "python scripts/import_summon_skill.py",
     "db:verify": "node scripts/verify-database.mjs",
     "db:inspect": "node scripts/inspect-database-schema.mjs",
+    "db:migrate:runes": "node migrations/25-ancient-rune-sockets.mjs",
     "test": "node --test --test-isolation=none \"tests/*.test.mjs\"",
     "test:rules": "node --test --test-isolation=none tests/rules.test.mjs tests/formulas.test.mjs tests/effects.test.mjs tests/targeting.test.mjs tests/commands.test.mjs tests/engine.test.mjs tests/application.test.mjs tests/inventory.test.mjs tests/architecture.test.mjs tests/database-contract.test.mjs tests/character-instance.test.mjs tests/character-card.test.mjs",
     "test:api": "node scripts/smoke-api.mjs",

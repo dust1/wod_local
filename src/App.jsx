@@ -195,6 +195,13 @@ export function App() {
     }
   }
 
+  function handleRunesChanged(inventory) {
+    heroInventory.setData(inventory);
+    heroEquipment.reload();
+    teamInventory.reload();
+    detail.reload();
+  }
+
   async function applyEquipment(selections) {
     if (!activeHero) return;
     setInventoryBusy(true); setInventoryError(null);
@@ -313,7 +320,7 @@ export function App() {
         {page === "attributes" && <AttributesPage hero={activeHero} detail={detail.data} loading={detail.loading} error={detail.error} onTrain={trainAttributes} onLevelUp={levelUpHero} />}
         {page === "skills" && <SkillsPage detail={detail.data} loading={detail.loading} error={detail.error} onTrain={trainSkill} onAdvance={advanceProfession} />}
         {page === "equipment" && <EquipmentPage hero={activeHero} equipment={heroEquipment.data} loading={heroEquipment.loading} busy={inventoryBusy} error={inventoryError ?? heroEquipment.error} onApply={applyEquipment} />}
-        {page === "heroInventory" && <HeroInventoryPage heroId={activeHero?.id} inventory={heroInventory.data} loading={heroInventory.loading} busy={inventoryBusy} error={inventoryError ?? heroInventory.error} hint={activeHero ? `${activeHero.name} 的私人仓库，存放未装备的物品。` : "请先创建或选择一个英雄。"} onAction={handleInventoryAction} />}
+        {page === "heroInventory" && <HeroInventoryPage heroId={activeHero?.id} inventory={heroInventory.data} loading={heroInventory.loading} busy={inventoryBusy} error={inventoryError ?? heroInventory.error} hint={activeHero ? `${activeHero.name} 的私人仓库，存放未装备的物品。` : "请先创建或选择一个英雄。"} onAction={handleInventoryAction} onRunesChanged={handleRunesChanged} />}
         {page === "teamInventory" && <TeamInventoryPage heroId={activeHero?.id} inventory={teamInventory.data} loading={teamInventory.loading} busy={inventoryBusy || !activeHero} error={inventoryError ?? teamInventory.error} hint={activeHero ? "团队仓库按账号隔离，可在同一账号的角色之间调配物品。" : "团队仓库按账号隔离。先创建一个角色才能把物品交给他。"} onAction={handleInventoryAction} />}
         {page === "settings" && <SettingsPage heroId={activeHero?.id} detail={detail.data} catalog={catalog.data} loading={detail.loading} error={detail.error} />}
         {page === "dungeon" && <DungeonPage hero={activeHero} heroes={heroes.data ?? []} catalog={catalog.data} onExplore={exploreDungeon} running={running} error={runError} />}

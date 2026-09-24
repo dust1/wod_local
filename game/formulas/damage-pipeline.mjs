@@ -7,8 +7,11 @@
 //   → 常规伤害百分比
 //   → z 类型伤害追加
 //   → 命中等级伤害修正
+//   → 技能效果奖励
 //   → 防御方护甲/抵抗
+//   → 脆弱性
 //   → 技能全局效果奖励
+//   → 伤害奖励（限时与常驻三档效果）
 //   → 最终取整
 //   → 资源扣减与装备损坏判定（由引擎负责，管线只返回结算结果）
 //
@@ -31,8 +34,11 @@ export const DEFAULT_DAMAGE_PIPELINE = Object.freeze({
     "percent",
     "zAddition",
     "hitGrade",
+    "skillEffectBonus",
     "armorResistance",
+    "vulnerability",
     "globalPercent",
+    "postDefenseBonus",
     "round",
   ]),
 });
@@ -73,6 +79,13 @@ function sumBy(entries, predicate) {
   return entries.filter(predicate).reduce((sum, entry) => sum + Number(entry.value ?? 0), 0);
 }
 
+/** 技能效果奖励：百分比相乘，再追加固定值；伤害与治疗共用。 */
+export function applySkillEffectBonus(value, terms = []) {
+  const percents = terms.filter((term) => term.kind === "percent").map((term) => Number(term.value ?? 0));
+  const flat = terms.filter((term) => term.kind !== "percent").reduce((sum, term) => sum + Number(term.value ?? 0), 0);
+  return { value: Math.max(0, value * percentMultiplier(percents) + flat), multiplier: percentMultiplier(percents), flat };
+}
+
 /**
  * 结算一次伤害。
  *
@@ -87,10 +100,12 @@ function sumBy(entries, predicate) {
  * @param {string[]} [input.damageTypes] 本次攻击实际产生的伤害类型
  * @param {string} [input.hitGrade]
  * @param {object} [input.hitGradePercents]
+ * @param {Array} [input.skillEffectBonus] 技能效果奖励，护甲之前生效
  * @param {object} [input.defense] { armor: {percent}, resistance: {percent} }
  * @param {object} [input.armorPolicy]
  * @param {object} [input.resistancePolicy]
  * @param {number[]} [input.globalPercents]
+ * @param {object} [input.postDefenseBonus] 伤害奖励在护甲和后续减免之后追加
  * @param {object} [options] { pipeline, roundingPolicy }
  */
 export function resolveDamage(input = {}, options = {}) {
@@ -155,24 +170,41 @@ export function resolveDamage(input = {}, options = {}) {
   const hitGradePercent = Number(hitGradePercents[hitGrade] ?? 0);
   const afterHitGrade = afterZ * (1 + hitGradePercent / 100);
   if (hitGradePercent !== 0) steps.push(calculationStep(`命中等级修正 ${hitGrade}`, hitGradePercent, `×${1 + hitGradePercent / 100}`));
+  const skillEffect = applySkillEffectBonus(afterHitGrade, input.skillEffectBonus);
+  if ((input.skillEffectBonus ?? []).length > 0) steps.push(calculationStep("技能效果奖励", skillEffect.value, `×${skillEffect.multiplier} +${skillEffect.flat}`));
 
   // 7. 防御方护甲 / 抵抗
   const armorPolicy = input.armorPolicy ?? zeroReductionPolicy;
   const resistancePolicy = input.resistancePolicy ?? zeroReductionPolicy;
-  const armor = armorPolicy.reduce(afterHitGrade, input.defense?.armor?.percent ?? 0);
-  const resistance = resistancePolicy.reduce(armor.value, input.defense?.resistance?.percent ?? 0);
+  const armor = armorPolicy.reduce(skillEffect.value, input.defense?.armor?.percent ?? 0);
   steps.push(calculationStep(`护甲减免`, armor.applied, `策略 ${armorPolicy.id}`));
+  const afterArmor = Math.max(0, armor.value - Number(input.defense?.armor?.flat ?? 0));
+  if (input.defense?.armor?.flat) steps.push(calculationStep("固定护甲减免", Number(input.defense.armor.flat)));
+  const resistance = resistancePolicy.reduce(afterArmor, input.defense?.resistance?.percent ?? 0);
   steps.push(calculationStep(`抵抗减免`, resistance.applied, `策略 ${resistancePolicy.id}`));
   const afterDefense = resistance.value;
+  const vulnerability = input.vulnerability ?? {};
+  const vulnerabilityPercent = percentMultiplier(vulnerability.percents ?? []);
+  const vulnerabilityRate = vulnerabilityPercent + Number(vulnerability.flat ?? 0) / 100;
+  const vulnerabilityLabel = vulnerabilityRate > 1 ? "脆弱性" : vulnerabilityRate >= 0 ? "抵抗性" : "抗性超出预期";
+  const afterVulnerability = afterDefense * vulnerabilityRate;
+  if ((vulnerability.percents ?? []).length > 0 || Number(vulnerability.flat ?? 0) !== 0)
+    steps.push(calculationStep(vulnerabilityLabel, afterVulnerability, `${vulnerabilityRate * 100}%`));
 
   // 8. 技能全局效果奖励
   const globalPercents = input.globalPercents ?? [];
   const globalMul = percentMultiplier(globalPercents);
   if (globalPercents.length > 0) steps.push(calculationStep("技能全局效果奖励倍率", globalMul, `×${globalMul}`));
-  const exact = afterDefense * globalMul;
+  const afterGlobal = afterVulnerability * globalMul;
+  const damageBonus = input.postDefenseBonus ?? {};
+  const bonusMultiplier = percentMultiplier(damageBonus.percents ?? []);
+  const bonusFlat = Number(damageBonus.flat ?? 0);
+  if ((damageBonus.percents ?? []).length > 0) steps.push(calculationStep("伤害奖励倍率", bonusMultiplier, `×${bonusMultiplier}`));
+  if (bonusFlat !== 0) steps.push(calculationStep("固定伤害奖励", bonusFlat));
+  const exact = afterGlobal * bonusMultiplier + bonusFlat;
 
   // 9. 最终取整
-  const final = calculatedNumber(exact, { roundingPolicy, minimum: 0, steps });
+  const final = calculatedNumber(exact, { roundingPolicy, steps });
 
   return {
     exact: final.exact,
@@ -192,6 +224,8 @@ export function resolveDamage(input = {}, options = {}) {
       percentMultiplier: percentMul,
       zTotal,
       globalMultiplier: globalMul,
+      vulnerabilityRate,
+      vulnerabilityLabel,
     },
     trace: {
       base: meanExact,

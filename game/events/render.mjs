@@ -42,9 +42,9 @@ export function renderEvent(ev) {
     case "AttackResolved":
       return { phase: "判定", text: `${ev.actorName} 对 ${ev.targetName} 的攻击结果为${ev.grade}。` };
     case "DamageApplied":
-      return { phase: "伤害", text: `${ev.targetName} 受到 ${number(ev.amount)} 点伤害${ev.damageType ? `（${ev.damageType}）` : ""}，剩余体力 ${number(ev.healthAfter)}。` };
+      return { phase: "伤害", text: `${ev.targetName} 受到 ${number(ev.amount)} 点伤害${ev.damageType ? `（${ev.damageType}）` : ""}${ev.diagnostics?.vulnerabilityRate !== undefined && ev.diagnostics.vulnerabilityRate !== 1 ? `，对此伤害的${ev.diagnostics.vulnerabilityLabel}为 ${number(ev.diagnostics.vulnerabilityRate * 100)}%` : ""}，剩余体力 ${number(ev.healthAfter)}。` };
     case "HealingApplied":
-      return { phase: "治疗", text: `${ev.targetName} 恢复 ${number(ev.amount)} 点体力，当前 ${number(ev.healthAfter)}。` };
+      return { phase: "治疗", text: `${ev.targetName} ${ev.reason === "vulnerability" ? `对${ev.damageType ?? "该"}伤害的抗性超出预期，` : ""}恢复 ${number(ev.amount)} 点体力，当前 ${number(ev.healthAfter)}。` };
     case "EffectApplied":
       return { phase: "效果", text: `${ev.targetName} 获得效果 ${ev.effectName}${ev.durationLabel ? `（${ev.durationLabel}）` : ""}。` };
     case "EffectActivationChanged":

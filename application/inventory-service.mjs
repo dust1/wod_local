@@ -3,9 +3,12 @@ import { relative, resolve } from "node:path";
 import { EQUIP_SLOTS, ONE_HAND_SLOT_ID, ONE_HAND_SLOT_LABEL, equipSlotIdForItemSlot } from "../game/domain/item.mjs";
 import { buildCharacterInstance } from "./character-instance-service.mjs";
 import { itemEquipabilityConditions, validateItemEquipability } from "./equipment-service.mjs";
+import { ancientRelicCapacity, isAncientRuneItemId, matchingAncientRuneCombination } from "../game/domain/ancient-rune.mjs";
+import { ANCIENT_RUNE_COMBINATIONS, ANCIENT_RUNE_ITEMS } from "../gamedata/overrides/ancient-rune-combinations.mjs";
 
 /** 派生部位与 equip_slot 表共用同一套展示标签。 */
 const SLOT_LABELS = Object.freeze({ ...EQUIP_SLOTS, [ONE_HAND_SLOT_ID]: ONE_HAND_SLOT_LABEL });
+const RUNE_NAMES = Object.fromEntries(Object.entries(ANCIENT_RUNE_ITEMS).map(([name, id]) => [id, name]));
 
 /** 物品的基础可装备部位 ID；“单手”映射为派生部位 one_hand。 */
 function itemDto(row) {
@@ -24,6 +27,7 @@ function itemDto(row) {
     acquiredAt: row.acquired_at ?? row.stored_at ?? null,
     minLevel: row.min_level,
     maxLevel: row.max_level,
+    socketedRuneItemIds: JSON.parse(row.socketed_rune_item_ids ?? "[]"),
   };
 }
 
@@ -52,8 +56,23 @@ export function heroInventoryPageDto(repository, root, heroId, userId, catalog =
       }
     }
     const result = validateItemEquipability({ hero: liveHero, item: dto, itemDetail: detail });
+    const runeSpec = ancientRelicCapacity(detail);
+    const runeCombination = matchingAncientRuneCombination(detail, dto.socketedRuneItemIds);
+    const signature = dto.socketedRuneItemIds.map(Number).sort((a, b) => a - b).join(",");
+    const otherPolarityMatch = !runeCombination && dto.socketedRuneItemIds.length === runeSpec.capacity
+      && ANCIENT_RUNE_COMBINATIONS.some((recipe) => Object.values(recipe.variants).some((variant) =>
+        variant.runeItemIds.length === runeSpec.capacity && variant.runeItemIds.slice().sort((a, b) => a - b).join(",") === signature));
+    let runeDetail = null;
+    if (runeCombination) {
+      const filePath = resolve(rootPath, runeCombination.effectPath);
+      const pathFromRoot = relative(rootPath, filePath);
+      if (!pathFromRoot.startsWith("..") && !pathFromRoot.includes(":")) {
+        try { runeDetail = JSON.parse(readFileSync(filePath, "utf8")); } catch { runeDetail = null; }
+      }
+    }
     return {
       ...dto,
+      isAncientRune: isAncientRuneItemId(dto.itemId),
       canEquip: Boolean(dto.slotId && result.allowed),
       equipabilityReasons: dto.slotId ? result.reasons : ["该物品不可装备"],
       equipability: detail ? itemEquipabilityConditions({ hero: liveHero, itemDetail: detail }) : null,
@@ -61,6 +80,16 @@ export function heroInventoryPageDto(repository, root, heroId, userId, catalog =
       professionRestriction: String(detail?.["详细属性"]?.["职业限制"] ?? ""),
       raceRestriction: String(detail?.["种族限定"] ?? detail?.["详细属性"]?.["种族限定"] ?? ""),
       itemSet: detail?.["所属套装"] ?? "",
+      runeCapacity: runeSpec.capacity,
+      runePolarities: runeSpec.polarities,
+      runeCombination: runeCombination ? { name: runeCombination.name, polarity: runeCombination.polarity } : null,
+      socketedRuneNames: dto.socketedRuneItemIds.map((id) => RUNE_NAMES[id] ?? `符文 #${id}`),
+      baseHolderEffects: detail?.["作用在物品持有者上的效果"] ?? [],
+      baseTargetEffects: detail?.["作用在被此物品影响的目标上的效果"] ?? [],
+      runeHolderEffects: runeDetail?.["作用在物品持有者上的效果"] ?? [],
+      runeTargetEffects: runeDetail?.["作用在被此物品影响的目标上的效果"] ?? [],
+      runeEffectAvailable: !runeCombination || Boolean(runeDetail),
+      runeStatus: runeCombination ? (runeDetail ? "matched" : "unsupported") : otherPolarityMatch ? "wrongPolarity" : "unmatched",
     };
   });
   return {

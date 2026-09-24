@@ -128,7 +128,7 @@ export function skillCategoryPrefix(targetName) {
 /** 判断某技能是否落在「X 类别的所有技能」范围内。 */
 export function matchesSkillCategory(prefix, skill) {
   if (!prefix) return false;
-  const names = [skill.skillType, ...(skill.typeNames ?? [])].filter(Boolean).map((name) => String(name));
+  const names = [skill.skillType, ...(skill.typeNames ?? []), ...(skill.skillTypeNames ?? [])].filter(Boolean).map((name) => String(name));
   return names.some((name) => name.includes(prefix) || prefix.includes(name));
 }
 
@@ -190,6 +190,16 @@ export function createCharacterInstance(input) {
       rawEntries.push({ ...entry, slotId: item.slotId ?? null, slotLabel: item.slotLabel ?? null });
     }
     warnings.push(...entryWarnings);
+    if (item.runeCombination && !item.runeDetail) {
+      missingSources.push({ kind: "ancientRune", id: item.instanceId, name: item.runeCombination.name, reason: "detailUnavailable" });
+    }
+    if (item.runeDetail && item.runeCombination) {
+      const runeSource = { kind: "ancientRune", id: item.instanceId,
+        name: `${item.name}·${item.runeCombination.name}`, holderKey: "作用在物品持有者上的效果" };
+      const runeEffects = readHolderEffects(item.runeDetail, runeSource);
+      rawEntries.push(...runeEffects.entries.map((entry) => ({ ...entry, slotId: item.slotId ?? null, slotLabel: item.slotLabel ?? null })));
+      warnings.push(...runeEffects.warnings);
+    }
   }
 
   for (const itemSet of input?.itemSets ?? []) {
@@ -306,7 +316,7 @@ export function createCharacterInstance(input) {
   }
 
   const context = { heroLevel, skillLevel: 0 };
-  const isEquipmentSource = (modifier) => modifier.sourceKind === "item" || modifier.sourceKind === "itemSet";
+  const isEquipmentSource = (modifier) => ["item", "itemSet", "ancientRune"].includes(modifier.sourceKind);
   const forStage = (stage) => allModifiers.filter((modifier) => {
     if (["item", "equipment"].includes(stage)) return isEquipmentSource(modifier);
     if (stage === "skill") return ["skill", "race", "profession"].includes(modifier.sourceKind);
@@ -327,7 +337,7 @@ export function createCharacterInstance(input) {
       if (categoryPrefix) return matchesSkillCategory(categoryPrefix, skill);
       return modifier.target.key === skill.name;
     });
-    const itemLevelTerms = levelModifiers.filter((modifier) => modifier.sourceKind === "item");
+    const itemLevelTerms = levelModifiers.filter((modifier) => ["item", "ancientRune"].includes(modifier.sourceKind));
     const setLevelTerms = levelModifiers.filter((modifier) => modifier.sourceKind === "itemSet");
     const skillLevelTerms = levelModifiers.filter((modifier) => ["skill", "race", "profession"].includes(modifier.sourceKind));
     const flatValue = (mods) => mods.filter((modifier) => modifier.kind !== "percent" && modifier.kind !== "globalPercent")
@@ -584,6 +594,7 @@ function matchesTarget(entry, skill) {
 
 function sourceLabelOf(source) {
   if (source.sourceKind === "item") return `装备：${source.sourceName}`;
+  if (source.sourceKind === "ancientRune") return `传古符文：${source.sourceName}`;
   if (source.sourceKind === "itemSet") return `套装：${source.sourceName}`;
   if (source.sourceKind === "race") return `种族：${source.sourceName}`;
   if (source.sourceKind === "profession") return `职业：${source.sourceName}`;
@@ -616,10 +627,11 @@ function roundFor(key, value) {
 function contributorList(modifiers) {
   const seen = new Map();
   for (const modifier of modifiers) {
-    const key = `${modifier.sourceLabel}|${modifier.rawText}|${modifier.target?.gradeLabel ?? ""}`;
+    const key = `${modifier.sourceKind}|${modifier.sourceId}|${modifier.sourceLabel}|${modifier.rawText}|${modifier.target?.gradeLabel ?? ""}`;
     if (seen.has(key)) continue;
     seen.set(key, {
       sourceKind: modifier.sourceKind,
+      sourceId: modifier.sourceId,
       sourceName: modifier.sourceName,
       sourceLabel: modifier.sourceLabel,
       category: modifier.category,
@@ -641,7 +653,8 @@ function groupByTarget(modifiers) {
     }
     const group = groups.get(key);
     group.terms.push({ unit: modifier.kind === "percent" ? "percent" : "flat", value: modifier.value });
-    group.sources.push({ sourceLabel: modifier.sourceLabel, rawText: modifier.recordRawText ?? modifier.rawText });
+    group.sources.push({ sourceKind: modifier.sourceKind, sourceId: modifier.sourceId,
+      sourceLabel: modifier.sourceLabel, rawText: modifier.recordRawText ?? modifier.rawText });
   }
   for (const group of groups.values()) group.total = sumTerms(group.terms);
   return [...groups.values()];
@@ -694,7 +707,7 @@ export function buildCombatTables(modifiers) {
         const row = {
           damageType: target.damageType ?? "所有",
           attackType: target.attackType ?? "所有",
-          grades: Object.fromEntries(GRADE_KEYS.map((grade) => [grade, { flat: 0, percent: 0 }])),
+          grades: Object.fromEntries(GRADE_KEYS.map((grade) => [grade, { flat: 0, percent: 0, percentTerms: [] }])),
           sources: [],
         };
         gradedIndex[target.type].set(rowKey, row);
@@ -702,9 +715,13 @@ export function buildCombatTables(modifiers) {
       }
       const row = gradedIndex[target.type].get(rowKey);
       const grade = target.grade ?? "normal";
-      if (isPercent) row.grades[grade].percent += value;
+      if (isPercent) {
+        row.grades[grade].percent += value;
+        row.grades[grade].percentTerms.push(value);
+      }
       else row.grades[grade].flat += value;
-      row.sources.push({ sourceLabel: modifier.sourceLabel, category: modifier.category, rawText: modifier.recordRawText ?? modifier.rawText, grade: target.gradeLabel ?? null });
+      row.sources.push({ sourceKind: modifier.sourceKind, sourceId: modifier.sourceId,
+        sourceLabel: modifier.sourceLabel, category: modifier.category, rawText: modifier.recordRawText ?? modifier.rawText, grade: target.gradeLabel ?? null });
       continue;
     }
 
@@ -727,6 +744,7 @@ export function buildCombatTables(modifiers) {
       attackType: row.attackType,
       values,
       percents,
+      percentTerms: GRADE_KEYS.map((grade) => [...row.grades[grade].percentTerms]),
       text: values.map((value, index) => formatValue(value, percents[index])).join(" / "),
       sources: dedupeSources(row.sources),
     };
@@ -751,7 +769,7 @@ export function buildCombatTables(modifiers) {
 function dedupeSources(sources) {
   const seen = new Map();
   for (const source of sources) {
-    const key = `${source.sourceLabel}|${source.category}|${source.rawText ?? ""}`;
+    const key = `${source.sourceKind}|${source.sourceId}|${source.sourceLabel}|${source.category}|${source.rawText ?? ""}`;
     if (!seen.has(key)) seen.set(key, source);
   }
   return [...seen.values()];

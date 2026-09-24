@@ -14,6 +14,7 @@ import { relative, resolve } from "node:path";
 import { createCharacterInstance } from "../game/domain/character-instance.mjs";
 import { createBaseCharacter } from "../game/domain/attributes.mjs";
 import { companionItemTypeNames } from "../game/domain/item.mjs";
+import { matchingAncientRuneCombination } from "../game/domain/ancient-rune.mjs";
 
 /** 读取 detail JSON，并确认路径没有逃出项目根目录。 */
 function readDetail(root, jsonPath) {
@@ -72,6 +73,9 @@ export function equippedItemPool({ repository, root, heroId, userId, equippedInv
     .map((entry) => {
       const metadata = repository.getItemDetailMetadata(entry.item_id);
       const detail = readDetail(root, metadata?.json_path);
+      const socketedRuneItemIds = repository.getSocketedRuneItemIds?.(entry.item_instance_id) ?? [];
+      const runeCombination = matchingAncientRuneCombination(detail, socketedRuneItemIds);
+      const runeDetail = runeCombination ? readDetail(root, runeCombination.effectPath) : null;
       return {
         itemId: entry.item_id,
         instanceId: entry.item_instance_id,
@@ -79,6 +83,9 @@ export function equippedItemPool({ repository, root, heroId, userId, equippedInv
         slotId: entry.equip_slot ?? null,
         slotLabel: entry.item_slot ?? null,
         detail,
+        socketedRuneItemIds,
+        runeCombination: runeCombination ? { name: runeCombination.name, polarity: runeCombination.polarity, effectPath: runeCombination.effectPath } : null,
+        runeDetail,
         jsonPath: metadata?.json_path ?? null,
         // 技能页「物品」字段匹配的就是这些类别名称，见 docs/WOD完整战斗规则.md §13.3 调用链。
         itemTypes: Array.isArray(detail?.["物品类别"]) ? detail["物品类别"].map(String) : [],
@@ -205,6 +212,9 @@ export function buildCharacterInstance({ repository, catalog, root, heroId, user
       companionItemTypes: item.companionItemTypes,
       setName: item.setName,
       targetEffects: item.targetEffects,
+      socketedRuneItemIds: item.socketedRuneItemIds,
+      runeCombination: item.runeCombination,
+      runeTargetEffects: item.runeDetail?.["作用在被此物品影响的目标上的效果"] ?? [],
       useLimits: item.useLimits,
       hasDetail: Boolean(item.detail),
       effectCount: item.detail?.["作用在物品持有者上的效果"]?.length ?? 0,

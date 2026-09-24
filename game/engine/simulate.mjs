@@ -15,10 +15,10 @@ import { event, resetEventSequence } from "../events/types.mjs";
 import { createRandomStream } from "../policies/random.mjs";
 import { createDiceRollPolicy } from "../policies/roll.mjs";
 import { buildInitiativeSchedule, DEFAULT_DECAY_POLICY, DEFAULT_TIE_BREAK_POLICY } from "../policies/initiative.mjs";
-import { resolveDamage, zeroHitGradePercents, zeroReductionPolicy } from "../formulas/damage-pipeline.mjs";
+import { applySkillEffectBonus, resolveDamage, zeroHitGradePercents, zeroReductionPolicy } from "../formulas/damage-pipeline.mjs";
 import { hitGradeDetail, debuffApplies } from "../formulas/hit-grade.mjs";
 import { skillRollMean } from "../formulas/rolls.mjs";
-import { createUnit, deriveUnit, effectiveSkillLevelOf, regenerate, skillManaCost, skillMeans } from "./unit.mjs";
+import { createUnit, deriveUnit, effectiveSkillLevelOf, regenerate, skillEffectBonusTermsOf, skillManaCost, skillMeans } from "./unit.mjs";
 import { selectTargets } from "../targeting/select.mjs";
 import { CommandCursor, FAILURE_REASON_LABELS, defaultFailureCostPolicy, interpretMainCommands } from "../commands/cursor.mjs";
 import { WAIT_COMMAND_SKILL_ID } from "../commands/battle-plan.mjs";
@@ -72,7 +72,21 @@ function gradedCombatTerms(rows = [], damageType, attackType, grade) {
   const applicable = rows.filter((row) => matchesScope(row.damageType, damageType) && matchesScope(row.attackType, attackType));
   return {
     flat: applicable.reduce((sum, row) => sum + Number(row.values?.[index] ?? 0), 0),
-    percents: applicable.map((row) => Number(row.percents?.[index] ?? 0)).filter((value) => value !== 0),
+    percents: applicable.flatMap((row) => row.percentTerms?.[index] ?? [Number(row.percents?.[index] ?? 0)]).filter((value) => value !== 0),
+  };
+}
+
+function activeGradedCombatTerms(ledger, unitId, type, damageType, attackType, grade) {
+  const applicable = ledger.modifiersFor(unitId).filter((modifier) =>
+    modifier.target?.type === type
+    && matchesScope(modifier.target.damageType, damageType)
+    && matchesScope(modifier.target.attackType, attackType)
+    && (modifier.target.grade == null || modifier.target.grade === { "命中": "normal", "重击": "critical", "致命一击": "lethal" }[grade]));
+  return {
+    flat: applicable.filter((modifier) => modifier.kind !== "percent" && modifier.kind !== "globalPercent")
+      .reduce((sum, modifier) => sum + Number(modifier.value ?? 0), 0),
+    percents: applicable.filter((modifier) => modifier.kind === "percent" || modifier.kind === "globalPercent")
+      .map((modifier) => Number(modifier.value ?? 0)),
   };
 }
 
@@ -746,7 +760,7 @@ export function simulateBattle(input) {
     const healingCommands = floorPlan.mainRound.filter((command) => skills.get(command.skillId)?.baseType === "heal");
     if (healingCommands.length === 0) return false;
     const triggers = collectHealingTriggers({
-      units,
+      units: units.map((unit) => ({ ...unit, healthMax: derivedOf(unit).healthMax })),
       actorId: actor.id,
       woundThresholdPolicy,
       priorityPolicy: healingPriorityPolicy,
@@ -984,14 +998,15 @@ export function simulateBattle(input) {
       const persistentDamage = gradedCombatTerms(actor.combat?.damage, damageType, skill.attackType, detail.grade);
       const persistentArmor = gradedCombatTerms(target.combat?.armor, damageType, skill.attackType, detail.grade);
       const persistentVulnerability = gradedCombatTerms(target.combat?.vulnerability, damageType, skill.attackType, detail.grade);
+      const activeDamage = activeGradedCombatTerms(ledger, actor.id, "damageBonus", damageType, skill.attackType, detail.grade);
+      const activeArmor = activeGradedCombatTerms(ledger, target.id, "armor", damageType, skill.attackType, detail.grade);
+      const activeVulnerability = activeGradedCombatTerms(ledger, target.id, "vulnerability", damageType, skill.attackType, detail.grade);
       const flats = attackerModifiers
         .filter((modifier) => modifier.target?.type === "damage" && (!modifier.target.damageType || modifier.target.damageType === damageType))
         .map((modifier) => ({ value: Number(modifier.value ?? 0), source: modifier.source ?? "effect", timing: "postRoll", damageType }));
-      if (persistentDamage.flat !== 0) flats.push({ value: persistentDamage.flat, source: "角色实例伤害奖励", timing: "postRoll", damageType });
       const percents = attackerModifiers
         .filter((modifier) => modifier.target?.type === "damagePercent" && (!modifier.target.damageType || modifier.target.damageType === damageType))
         .map((modifier) => ({ value: Number(modifier.value ?? 0), source: modifier.source ?? "effect" }));
-      percents.push(...persistentDamage.percents.map((value) => ({ value, source: "角色实例伤害奖励" })));
       const globalPercents = attackerModifiers
         .filter((modifier) => modifier.target?.type === "globalPercent")
         .map((modifier) => Number(modifier.value ?? 0));
@@ -1012,13 +1027,17 @@ export function simulateBattle(input) {
           damageTypes: [damageType],
           hitGrade: detail.grade,
           hitGradePercents,
+          skillEffectBonus: skillEffectBonusTermsOf(actor, skill, ledger),
           defense: {
-            armor: { percent: sumReduction(targetModifiers, "armor", damageType) + persistentArmor.percents.reduce((sum, value) => sum + value, 0), flat: persistentArmor.flat },
+            armor: { percent: sumReduction(targetModifiers, "armor", damageType) + [...persistentArmor.percents, ...activeArmor.percents].reduce((sum, value) => sum + value, 0), flat: persistentArmor.flat + activeArmor.flat },
             resistance: { percent: sumReduction(targetModifiers, "resistance", damageType) },
           },
           armorPolicy,
           resistancePolicy,
           globalPercents,
+          vulnerability: { flat: persistentVulnerability.flat + activeVulnerability.flat,
+            percents: [...persistentVulnerability.percents, ...activeVulnerability.percents] },
+          postDefenseBonus: { flat: persistentDamage.flat + activeDamage.flat, percents: [...persistentDamage.percents, ...activeDamage.percents] },
           context: { actorId: actor.id, targetId: target.id },
         },
         { roundingPolicy },
@@ -1044,8 +1063,15 @@ export function simulateBattle(input) {
           target.defeatedAtRound = round;
           emit("UnitDefeated", { unitId: target.id, unitName: target.name, side: target.side });
         }
+      } else if (damageResult.applied < 0) {
+        const healthBefore = target.health;
+        target.health = Math.min(targetDerived.healthMax, target.health - damageResult.applied);
+        rememberResourceOffsets(target, targetDerived);
+        emit("HealingApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name,
+          amount: target.health - healthBefore, healthAfter: target.health, reason: "vulnerability", damageType, trace: damageResult.trace });
       } else {
-        emit("DamageApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, amount: 0, damageType, healthAfter: target.health, hitGrade: detail.grade, trace: damageResult.trace });
+        emit("DamageApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, amount: 0,
+          damageType, healthAfter: target.health, hitGrade: detail.grade, trace: damageResult.trace, diagnostics: damageResult.diagnostics });
       }
     }
 
@@ -1063,7 +1089,8 @@ export function simulateBattle(input) {
     for (const target of selection.targets) {
       emit("TargetSelected", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, mode: selection.mode, position: target.position });
       const targetDerived = derivedOf(target);
-      const amount = Math.max(0, Math.floor(rollPolicy.rollAroundMean(base, { purpose: "heal", randomStream: stream })));
+      const rolled = rollPolicy.rollAroundMean(base, { purpose: "heal", randomStream: stream });
+      const amount = Math.floor(applySkillEffectBonus(rolled, skillEffectBonusTermsOf(actor, skill, ledger)).value);
       target.health = Math.min(targetDerived.healthMax, target.health + amount);
       rememberResourceOffsets(target, targetDerived);
       emit("HealingApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, amount, healthAfter: target.health, trace: { base, applied: amount } });

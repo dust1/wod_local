@@ -6,6 +6,7 @@ import { manaCost } from "../formulas/mana-cost.mjs";
 import { applyModifierPipeline } from "../modifiers/pipeline.mjs";
 import { actionsFromExact, DEFAULT_ROUNDING_POLICY } from "../formulas/calculation.mjs";
 import { calculateSkillLevel } from "../domain/skill-level.mjs";
+import { matchesSkillCategory, skillCategoryPrefix } from "../domain/character-instance.mjs";
 
 export const UNIT_KINDS = Object.freeze(["hero", "monster", "summon"]);
 
@@ -26,6 +27,7 @@ export function createUnit(input) {
       equipmentBonus: Number(skill.equipmentBonus ?? 0),
       otherBonus: Number(skill.otherBonus ?? 0),
       percentageBonuses: (skill.percentageBonuses ?? []).map(Number),
+      effectBonusTerms: (skill.effectBonusTerms ?? []).map((term) => ({ ...term })),
     };
   }
 
@@ -61,6 +63,21 @@ export function createUnit(input) {
     escaped: false,
     notes: [],
   };
+}
+
+/** 技能效果加成与技能等级加成分开读取；限时来源在施法当刻取账本快照。 */
+export function skillEffectBonusTermsOf(unit, skill, effectLedger) {
+  const persistent = unit.skills?.[skill.id]?.effectBonusTerms ?? [];
+  const active = effectLedger?.modifiersFor(unit.id).filter((modifier) => {
+    if (modifier.target?.type !== "skillEffect") return false;
+    if (modifier.target.key === skill.id || modifier.target.key === skill.name) return true;
+    const category = skillCategoryPrefix(modifier.target.key);
+    return category ? matchesSkillCategory(category, skill) : false;
+  }) ?? [];
+  return [...persistent, ...active].map((modifier) => ({
+    kind: modifier.unit === "percent" || modifier.kind === "percent" || modifier.kind === "globalPercent" ? "percent" : "flat",
+    value: Number(modifier.value ?? 0),
+  }));
 }
 
 /** 效果修正按目标过滤。 */

@@ -29,23 +29,80 @@ export function ItemDetailDialog({ state, onClose }) {
   </div>;
 }
 
-export function InventoryTable({ items, mode, busy, onAction, onDetail }) {
+export function InventoryTable({ items, mode, busy, onAction, onDetail, onSocket }) {
   const slotText = (item) => item.equipSlotLabel ?? item.slotLabel ?? "—";
   return <table className="wod-table inventory-table"><thead><tr><th>实例</th><th>物品</th><th>部位</th><th>等级范围</th><th>状态</th><th>操作</th></tr></thead><tbody>
     {items.map((item) => <tr key={item.instanceId}><td>#{item.instanceId}</td><td><button className="skill-name" onClick={() => onDetail(item)}>{item.name}</button></td><td>{slotText(item)}</td><td>{item.minLevel}–{item.maxLevel}</td><td>{item.equipped ? "已装备" : mode === "team" ? "团队仓库" : "角色仓库"}</td><td className="inventory-actions">
       {mode === "equipment" && <WodButton disabled={busy} onClick={() => onAction("equip", item, false)}>卸下</WodButton>}
-      {mode === "hero" && <><WodButton disabled={busy || !item.canEquip} title={!item.slotId ? "该物品不可装备" : item.canEquip ? "装备到角色身上" : item.equipabilityReasons?.join("；") || "不满足装备要求"} onClick={() => onAction("equip", item, true)}>装备</WodButton><WodButton disabled={busy} onClick={() => onAction("team", item)}>转入团队</WodButton></>}
+      {mode === "hero" && <><WodButton disabled={busy || !item.canEquip} title={!item.slotId ? "该物品不可装备" : item.canEquip ? "装备到角色身上" : item.equipabilityReasons?.join("；") || "不满足装备要求"} onClick={() => onAction("equip", item, true)}>装备</WodButton>{item.runeCapacity > 0 && item.runePolarities?.length > 0 && <WodButton disabled={busy} onClick={() => onSocket(item)}>镶嵌 {item.socketedRuneItemIds.length}/{item.runeCapacity}</WodButton>}<WodButton disabled={busy} onClick={() => onAction("team", item)}>转入团队</WodButton></>}
       {mode === "team" && <WodButton disabled={busy} onClick={() => onAction("hero", item)}>交给角色</WodButton>}
     </td></tr>)}
   </tbody></table>;
 }
 
-export function InventoryPage({ title, mode, inventory, loading, busy = false, error, onAction, hint, heroId }) {
+function RuneEffects({ title, holder, target }) {
+  return <section className="rune-effects"><h3>{title}</h3>
+    <h4>作用在物品持有者上的效果</h4>{holder?.length ? <SkillEffectsTable rows={holder} /> : <p className="subtle">无</p>}
+    <h4>作用在被此物品影响的目标上的效果</h4>{target?.length ? <SkillEffectsTable rows={target} /> : <p className="subtle">无</p>}
+  </section>;
+}
+
+function AncientRuneDialog({ item, runeItems, heroId, onClose, onChanged }) {
+  const [selected, setSelected] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const remaining = item.runeCapacity - item.socketedRuneItemIds.length;
+  const full = remaining === 0;
+  const statusText = item.runeStatus === "wrongPolarity" ? "符文组合与遗物极性不符，不追加效果。"
+    : item.runeStatus === "unsupported" ? "组合效果资料暂不可用，当前不追加效果。"
+      : full && !item.runeCombination ? "符文未匹配组合，不追加效果。" : null;
+  async function update(method) {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const result = await request(`/api/heroes/${heroId}/inventory/${item.instanceId}/runes`, method === "POST" ? {
+        method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runeInstanceIds: selected }),
+      } : { method });
+      onChanged(method === "POST" ? result.inventory : result);
+      setSelected([]);
+      setNotice(method === "POST" ? "镶嵌完成，已消耗所选符文。" : "已拆卸全部符文，符文不返还。");
+    } catch (cause) { setError(cause.message); }
+    finally { setBusy(false); }
+  }
+  return <div className="skill-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className="skill-dialog item-dialog rune-dialog" role="dialog" aria-modal="true" aria-labelledby="rune-dialog-title">
+      <header><h2 id="rune-dialog-title">镶嵌 · {item.name} #{item.instanceId}</h2><button className="skill-dialog-close" onClick={onClose} aria-label="关闭镶嵌页面">×</button></header>
+      <div className="skill-dialog-scroll">
+        <p>极性：{item.runePolarities.join("、")}；孔位：{item.socketedRuneItemIds.length}/{item.runeCapacity}</p>
+        <p>已镶嵌：{item.socketedRuneNames.length ? item.socketedRuneNames.join("、") : "无"}</p>
+        <p>组合：{item.runeCombination ? `${item.runeCombination.name}（${item.runeCombination.polarity}）` : "无"}</p>
+        {statusText && <p className="rune-warning">{statusText}</p>}
+        <RuneEffects title="物品原有效果" holder={item.baseHolderEffects} target={item.baseTargetEffects} />
+        <RuneEffects title="符文追加效果" holder={item.runeHolderEffects} target={item.runeTargetEffects} />
+        <section className="rune-picker"><h3>选择角色仓库符文（还可镶嵌 {remaining} 枚）</h3>
+          {runeItems.length ? <div className="rune-options">{runeItems.map((rune) => <label key={rune.instanceId}>
+            <input type="checkbox" checked={selected.includes(rune.instanceId)} disabled={busy || (selected.length >= remaining && !selected.includes(rune.instanceId))}
+              onChange={(event) => setSelected((ids) => event.target.checked ? [...ids, rune.instanceId] : ids.filter((id) => id !== rune.instanceId))} />
+            {rune.name} #{rune.instanceId}
+          </label>)}</div> : <p className="subtle">当前角色仓库没有传古符文。</p>}
+          <p className="subtle">镶嵌会消耗所选符文；拆卸后符文不返还。组合由服务端按种类、数量和极性判定。</p>
+          {notice && <p role="status">{notice}</p>}{error && <p className="form-error" role="alert">{error}</p>}
+          <div className="button-row"><WodButton disabled={busy || selected.length === 0} onClick={() => update("POST")}>镶嵌所选符文</WodButton>
+            <WodButton disabled={busy || item.socketedRuneItemIds.length === 0} onClick={() => update("DELETE")}>拆卸全部（不返还）</WodButton></div>
+        </section>
+      </div>
+    </section>
+  </div>;
+}
+
+export function InventoryPage({ title, mode, inventory, loading, busy = false, error, onAction, onRunesChanged, hint, heroId }) {
   const [detailState, setDetailState] = useState(null);
+  const [socketInstanceId, setSocketInstanceId] = useState(null);
   const emptyFilters = { query: "", professionId: "", raceId: "", slot: "", itemSet: "" };
   const [filterDraft, setFilterDraft] = useState(emptyFilters);
   const [filters, setFilters] = useState(emptyFilters);
   const all = inventory?.items ?? [];
+  const socketItem = all.find((item) => item.instanceId === socketInstanceId);
   const options = inventory?.filters ?? {};
   const professionName = options.professions?.find((entry) => String(entry.id) === filters.professionId)?.name;
   const raceName = options.races?.find((entry) => String(entry.id) === filters.raceId)?.name;
@@ -74,8 +131,9 @@ export function InventoryPage({ title, mode, inventory, loading, busy = false, e
     <p className="subtle">{hint ?? ""}{all.length > 0 && <>共 {all.length} 件实例，其中已装备 {all.filter((item) => item.equipped).length} 件。</>}</p>
     {loading && <p className="subtle">载入中……</p>}{error && <p className="form-error">{error}</p>}
     {!loading && items.length === 0 && <p className="subtle">这里还没有物品。</p>}
-    {items.length > 0 && <InventoryTable items={items} mode={mode} busy={busy || loading} onAction={onAction} onDetail={showDetail} />}
+    {items.length > 0 && <InventoryTable items={items} mode={mode} busy={busy || loading} onAction={onAction} onDetail={showDetail} onSocket={(item) => setSocketInstanceId(item.instanceId)} />}
     <ItemDetailDialog state={detailState} onClose={() => setDetailState(null)} />
+    {mode === "hero" && socketItem && <AncientRuneDialog key={socketItem.instanceId} item={socketItem} runeItems={all.filter((item) => item.isAncientRune && !item.equipped)} heroId={heroId} onClose={() => setSocketInstanceId(null)} onChanged={onRunesChanged} />}
   </section>;
 }
 
@@ -94,5 +152,3 @@ export function ItemSearchBar({ options, value, onChange, onSearch }) {
     </div>
   </form>;
 }
-
-

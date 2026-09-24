@@ -7,11 +7,28 @@ import { manaCost, manaCostFactor, effectiveSkillLevel, equipmentSkillLevelBonus
 import { hitGrade, hitGradeDetail, debuffApplies } from "../game/formulas/hit-grade.mjs";
 import { applyModifierPipeline, percentMultiplier, percent, flat, globalPercent, scaledFlat } from "../game/modifiers/pipeline.mjs";
 import { calculatedNumber, actionsFromExact, floorRoundingPolicy, roundHalfUpPolicy } from "../game/formulas/calculation.mjs";
-import { resolveDamage, zeroReductionPolicy } from "../game/formulas/damage-pipeline.mjs";
+import { applySkillEffectBonus, resolveDamage, zeroReductionPolicy } from "../game/formulas/damage-pipeline.mjs";
 import { attributeTrainingChange, attributeTrainingRangeChange, heroExperienceProgress, normalizedAttributeDraftValue, normalizedSkillDraftLevel, skillTrainingChange, skillTrainingRangeChange } from "../game/formulas/training-cost.mjs";
 import { createRandomStream, hashSeed, pickDeterministic } from "../game/policies/random.mjs";
 import { createUniformRollPolicy, meanRollPolicy } from "../game/policies/roll.mjs";
 import { buildInitiativeSchedule, createLinearDecayPolicy, createWodBlockDecayPolicy } from "../game/policies/initiative.mjs";
+
+test("脆弱性在护甲后合成固定百分点与叠乘百分比，负值转为回血", () => {
+  const input = { meanExact: 20, rollPolicy: meanRollPolicy, damageTypes: ["切割伤害"],
+    defense: { armor: { flat: 5 } }, postDefenseBonus: { flat: 3 } };
+  const reduced = resolveDamage({ ...input, vulnerability: { flat: -10, percents: [-20, -20] } });
+  assert.ok(Math.abs(reduced.diagnostics.vulnerabilityRate - 0.54) < 1e-9);
+  assert.equal(reduced.applied, 11);
+  assert.equal(reduced.diagnostics.vulnerabilityLabel, "抵抗性");
+  const deepened = resolveDamage({ ...input, vulnerability: { flat: 30 } });
+  assert.equal(deepened.diagnostics.vulnerabilityRate, 1.3);
+  assert.equal(deepened.diagnostics.vulnerabilityLabel, "脆弱性");
+  const immune = resolveDamage({ ...input, postDefenseBonus: {}, vulnerability: { flat: -100 } });
+  assert.equal(immune.applied, 0);
+  const healed = resolveDamage({ ...input, postDefenseBonus: {}, vulnerability: { flat: -150 } });
+  assert.equal(healed.applied, -8);
+  assert.equal(healed.diagnostics.vulnerabilityLabel, "抗性超出预期");
+});
 
 test("八项属性键完整且顺序稳定", () => {
   assert.deepEqual(ATTRIBUTE_KEYS, [
@@ -280,6 +297,19 @@ test("零减免策略显式标注为实验性", () => {
   assert.equal(result.applied, 10);
   assert.equal(result.diagnostics.armorPolicyId, zeroReductionPolicy.id);
   assert.equal(result.diagnostics.pipelineExperimental, false);
+});
+
+test("固定护甲先扣减，伤害奖励在护甲后追加", () => {
+  const result = resolveDamage({ meanExact: 20, damageTypes: ["火焰伤害"], defense: { armor: { flat: 25 } }, postDefenseBonus: { flat: 3 } });
+  assert.equal(result.applied, 3);
+  const second = resolveDamage({ meanExact: 20, damageTypes: ["火焰伤害"], defense: { armor: { flat: 5 } }, postDefenseBonus: { flat: 3, percents: [20] } });
+  assert.equal(second.applied, 21);
+});
+
+test("技能效果奖励先乘百分比再加固定值，并在护甲之前生效", () => {
+  assert.equal(applySkillEffectBonus(20, [{ kind: "percent", value: -25 }, { kind: "flat", value: -2 }]).value, 13);
+  const result = resolveDamage({ meanExact: 20, damageTypes: ["切割伤害"], skillEffectBonus: [{ kind: "flat", value: 5 }], defense: { armor: { flat: 10 } } });
+  assert.equal(result.applied, 15);
 });
 
 test("先攻队列按降序排列并逐次衰减", () => {

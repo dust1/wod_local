@@ -4,6 +4,9 @@ import { spawn } from "node:child_process";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { RULE_QUESTIONS } from "../gamedata/rules/rule-questions.mjs";
+import { ANCIENT_RUNE_COMBINATIONS } from "../gamedata/overrides/ancient-rune-combinations.mjs";
+import { openDatabase } from "../infrastructure/persistence/sqlite-repository.mjs";
 
 const port = Number(process.argv[2] ?? 4599);
 const base = `http://127.0.0.1:${port}`;
@@ -93,6 +96,38 @@ sessionCookie = registration.headers.get("set-cookie")?.split(";")[0] ?? "";
 check(sessionCookie, "注册响应缺少会话 Cookie");
 const created = await post("/api/heroes", { name: "自检英雄", raceId: catalog.races[0].id, professionId: catalog.professions[0].id, gender: "male" });
 check(created.name === "自检英雄", "角色创建失败");
+check((await get(`/api/heroes/${created.id}/inventory`)).items.length === 0, "新建角色不应自带物品");
+
+// 在临时库中添加遗物与材料，通过真实 HTTP 请求核验同时提交只消耗一次。
+const runeDb = openDatabase(databasePath);
+const relicItemId = 990001;
+runeDb.prepare("INSERT INTO items(id,name,slot,min_level,max_level,active) VALUES(?,?,?,?,?,1)")
+  .run(relicItemId, "接口测试传古遗物", "身体", 0, 99);
+runeDb.prepare("INSERT INTO item_detail_metadata(item_id,source_table,json_path,content_hash,parsed_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)")
+  .run(relicItemId, "test", "tests/fixtures/ancient-relic.json", "test");
+function grant(itemId) {
+  const instanceId = Number(runeDb.prepare("INSERT INTO item_instances(item_id) VALUES(?)").run(itemId).lastInsertRowid);
+  runeDb.prepare("INSERT INTO hero_inventory(hero_id,item_instance_id,is_equipped,equip_slot) VALUES(?,?,0,NULL)").run(created.id, instanceId);
+  return instanceId;
+}
+const relicInstanceId = grant(relicItemId);
+const runeIds = ANCIENT_RUNE_COMBINATIONS.find((entry) => entry.name === "泪").variants[4].runeItemIds.map(grant);
+runeDb.close();
+const socketPath = `/api/heroes/${created.id}/inventory/${relicInstanceId}/runes`;
+const beforeSocket = await get(`/api/heroes/${created.id}/inventory`);
+check(beforeSocket.items.find((item) => item.instanceId === relicInstanceId)?.runeCapacity === 4, "仓库未显示传古遗物孔位");
+const simultaneous = await Promise.all([0, 1].map(() => fetch(`${base}${socketPath}`, {
+  method: "POST", headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+  body: JSON.stringify({ runeInstanceIds: runeIds }),
+})));
+check(simultaneous.filter((response) => response.ok).length === 1, "并发提交应仅成功一次");
+const afterSocket = await get(`/api/heroes/${created.id}/inventory`);
+check(afterSocket.items.find((item) => item.instanceId === relicInstanceId)?.runeCombination?.name === "泪", "并发镶嵌组合不正确");
+check(afterSocket.items.filter((item) => item.isAncientRune).length === 0, "符文库存应只消耗一次");
+const cleared = await del(socketPath);
+check(cleared.items.find((item) => item.instanceId === relicInstanceId)?.socketedRuneItemIds.length === 0, "拆卸后遗物仍有符文");
+check(cleared.items.filter((item) => item.isAncientRune).length === 0, "拆卸不应返还符文");
+console.log("✓ /api/heroes/:id/inventory/:instanceId/runes 并发、展示、拆卸");
 
 const heroes = await get("/api/heroes");
 check(heroes.length > 0, "缺少英雄");
@@ -144,7 +179,7 @@ check(detail.events === undefined && detail.input === undefined, "战报详情�
 console.log(`✓ /api/battles/${battles[0].battleId} displayRounds=${detail.roundData.length}`);
 
 const rules = await get("/api/rules");
-check(rules.questions.length === 20, "规则问题应为 20 项");
+check(rules.questions.length === RULE_QUESTIONS.length, "规则问题数量应与当前注册表一致");
 console.log(`✓ /api/rules questions=${rules.questions.length} policies=${rules.policies.length}`);
 
 const skills = await get("/api/skills?q=剑");
@@ -164,12 +199,11 @@ check(items.total > 1000, "物品索引未加载");
 console.log(`✓ /api/items total=${items.total} matched=${items.matched}`);
 
 // 装备、角色仓库、团队仓库：完整走一遍流转并验证租户隔离。
-// 新建角色不发放也不装备任何物品，因此物品必须自己购买。
 const emptyInventory = await get(`/api/heroes/${created.id}/inventory`);
-check(emptyInventory.items.length === 0, `新建角色不应自带物品，实际 ${emptyInventory.items.length}`);
+check(emptyInventory.items.length === 1 && emptyInventory.items[0].instanceId === relicInstanceId, "临时库应仅有接口测试遗物");
 const emptyEquipment = await get(`/api/heroes/${created.id}/equipment`);
 check(emptyEquipment.slots.every((slot) => slot.selectedInstanceId == null), "新建角色不应装备任何物品");
-console.log("✓ 新建角色身上与仓库里都没有物品");
+console.log("✓ 新建角色没有自动装备");
 
 // 挑一件当前角色真的穿得上的物品：新手装备没有任何属性/等级要求，最稳妥。
 let sword = null;
@@ -190,6 +224,15 @@ const afterPurchase = await get(`/api/heroes/${created.id}/inventory`);
 check(afterPurchase.items.some((entry) => entry.instanceId === sword.instanceId), "购买后物品应在角色仓库");
 check(afterPurchase.items.every((entry) => !entry.equipped), "购买的物品不应自动装备");
 console.log(`✓ 市场购买 instance=${sword.instanceId} ${sword.name}`);
+
+const invalidRuneResponse = await fetch(`${base}/api/heroes/${created.id}/inventory/${sword.instanceId}/runes`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+  body: JSON.stringify({ runeInstanceIds: [] }),
+});
+check(invalidRuneResponse.status === 400, "非传古遗物必须拒绝镶嵌");
+check((await invalidRuneResponse.json()).error.includes("传古遗物"), "镶嵌错误应说明物品类别");
+console.log("✓ 非传古遗物镶嵌被拒绝");
 
 const equipped = await post(`/api/heroes/${created.id}/inventory/${sword.instanceId}/equip`, { equipped: true });
 const equippedEntry = equipped.items.find((entry) => entry.instanceId === sword.instanceId);

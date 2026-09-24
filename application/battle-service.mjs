@@ -13,7 +13,7 @@ import { planRowToDomain } from "./hero-service.mjs";
 import { actionSettingsDto, actionSettingsToBattlePlan, ACTION_PHASES } from "./action-settings-service.mjs";
 import { buildCharacterInstance } from "./character-instance-service.mjs";
 import { encountersForDungeon, battlesForFloor } from "../gamedata/overrides/dungeon-encounters.mjs";
-import { ATTRIBUTE_TARGET_KEYS, DERIVED_KEYS, parseCorrection } from "../game/domain/holder-effect.mjs";
+import { ATTRIBUTE_TARGET_KEYS, DERIVED_KEYS, parseCorrection, parseGradeCorrection } from "../game/domain/holder-effect.mjs";
 import { evaluateSummonExpression } from "../game/formulas/summon-expression.mjs";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -48,12 +48,25 @@ function targetEffectActivation(effect) {
   return { kind: "immediate" };
 }
 
-function combatEffect(effect, sourceKind, sourceId, index, skillIdByName = new Map()) {
+export function combatEffect(effect, sourceKind, sourceId, index, skillIdByName = new Map()) {
   const correction = parseCorrection(effect?.["修正"] ?? "");
+  const gradedKind = effect?.["类型"] === "护甲奖励" ? "armor" : effect?.["类型"] === "伤害奖励" ? "damageBonus"
+    : effect?.["类型"] === "对此种攻击方式，攻击类型伤害的脆弱性" ? "vulnerability" : null;
+  const gradeKey = gradedKind === "armor" ? "护甲(r)" : gradedKind === "damageBonus" ? "伤害奖励(r)" : "奖励(r)";
+  const gradedModifiers = gradedKind && effect?.[gradeKey]
+    ? parseGradeCorrection(effect[gradeKey]).flatMap((grade) => grade.terms.map((term) => ({
+      ...term,
+      kind: term.kind === "scaledValue" ? "scaledPercent" : term.kind,
+      target: { type: gradedKind, damageType: effect["伤害方式"], attackType: effect["攻击方式"], grade: grade.grade },
+      source: `${sourceKind}:${sourceId}`,
+    })))
+    : [];
   const targetName = effect?.["属性"] ?? effect?.["技能"] ?? effect?.targetName;
   const attributeKey = ATTRIBUTE_TARGET_KEYS[targetName];
   const target = effect?.["类型"] === "对技能等级的奖励" || effect?.targetKind === "skill" || effect?.targetKind === "skillCategory"
     ? { type: "skill", key: effect?.targetSkillId ?? skillIdByName.get(targetName) ?? targetName, label: targetName }
+    : effect?.["类型"] === "对技能效果的奖励"
+      ? { type: "skillEffect", key: effect?.targetSkillId ?? skillIdByName.get(targetName) ?? targetName, label: targetName }
     : attributeKey
       ? { type: Object.values(DERIVED_KEYS).includes(attributeKey) ? "derived" : "attribute", key: attributeKey, label: targetName }
       : effect?.["类型"] === "防御奖励" || effect?.category === "防御奖励"
@@ -78,7 +91,7 @@ function combatEffect(effect, sourceKind, sourceId, index, skillIdByName = new M
     name: effect?.name ?? effect?.["类型"] ?? effect?.category ?? `${sourceKind}效果`,
     duration: targetEffectDuration(effect),
     activation: targetEffectActivation(effect),
-    modifiers: effect?.engineModifiers ?? modifiers,
+    modifiers: effect?.engineModifiers ?? [...modifiers, ...gradedModifiers],
     rawText: effect?.rawText ?? rawText,
     raw: effect,
     sourceKind,
@@ -192,7 +205,7 @@ export function summonTemplateForCommand(repository, instance, skillId, itemIds,
   };
 }
 
-function attachCalledItemEffects(plan, instance, catalog, repository, root) {
+export function attachCalledItemEffects(plan, instance, catalog, repository, root) {
   if (!plan) return plan;
   const items = new Map();
   for (const item of instance.equippedItems ?? []) {
@@ -210,6 +223,8 @@ function attachCalledItemEffects(plan, instance, catalog, repository, root) {
       instances: items.get(String(item.itemId)).map((entry) => ({ instanceId: entry.instanceId, ...entry.useLimits })),
     }));
     command.itemEffects = selected.flatMap((item) => (item.targetEffects ?? []).map((effect, index) => combatEffect(effect, "item", item.itemId, index, skillIdByName)));
+    command.itemEffects.push(...selected.flatMap((item) => (item.runeTargetEffects ?? []).map((effect, index) =>
+      combatEffect(effect, "ancientRune", `${item.instanceId}:${item.runeCombination?.name}`, index, skillIdByName))));
     const selectedSetNames = [...new Set(selected.map((item) => item.setName).filter(Boolean))];
     command.setEffects = selectedSetNames.flatMap((name) => (sets.get(name)?.targetEffects ?? []).map((effect, index) => combatEffect(effect, "itemSet", name, index, skillIdByName)));
     if (catalog.skills.get(command.skillId)?.baseType === "summon") command.summonTemplate = summonTemplateForCommand(repository, instance, command.skillId, itemIds, root);
@@ -326,7 +341,7 @@ function heroExplorationEntry(repository, hero, leaderHeroId, instance) {
   };
 }
 
-function unitFromCharacterInstance(hero, instance, position) {
+export function unitFromCharacterInstance(hero, instance, position) {
   const attributes = { ...instance.effectiveAttributes };
   const healthMax = Number(instance.derived.healthMax.effective);
   const manaMax = Number(instance.derived.manaMax.effective);
@@ -342,6 +357,7 @@ function unitFromCharacterInstance(hero, instance, position) {
       equipmentBonus: Number(skill.equipmentLevelBonusApplied ?? skill.equipmentLevelBonus ?? 0),
       percentageBonuses: [...(skill.percentageBonuses ?? [])],
       otherBonus: Number(skill.postPercentFlatBonus ?? ((skill.setLevelBonus ?? 0) + (skill.skillLevelBonus ?? 0))),
+      effectBonusTerms: (skill.effectBonuses ?? []).flatMap((bonus) => bonus.terms),
     };
   }
   return {

@@ -6,7 +6,9 @@ import { renderEventsToText } from "../game/events/render.mjs";
 import { verifyReplay, stableHash } from "../game/replay/envelope.mjs";
 import { STARTER_SKILLS, STARTER_SKILL_BY_ID } from "../gamedata/overrides/starter-content.mjs";
 import { createUnit, deriveUnit, effectiveSkillLevelOf } from "../game/engine/unit.mjs";
+import { skillEffectBonusTermsOf } from "../game/engine/unit.mjs";
 import { EffectLedger } from "../game/domain/effect.mjs";
+import { combatEffect } from "../application/battle-service.mjs";
 import { manaCostValue } from "../game/formulas/mana-cost.mjs";
 import { createDisplayBattleReport } from "../game/events/display-report.mjs";
 import { createBattlePlan } from "../game/commands/battle-plan.mjs";
@@ -88,15 +90,109 @@ function run(options = {}) {
       preRoundOrder: [],
     },
     battlePlans: options.battlePlans ?? plans(),
-    skills: STARTER_SKILL_BY_ID,
+    skills: options.skills ?? STARTER_SKILL_BY_ID,
     randomSeed: options.seed ?? "engine-test-1",
     rulesetVersion: RULESET_VERSION,
     contentVersion: "starter-content",
     maxRounds: options.maxRounds ?? 12,
     policies: options.policies,
     itemUsage: options.itemUsage,
+    effectLedger: options.effectLedger,
   });
 }
+
+test("技能类别效果奖励提高伤害但不改变实时技能等级", () => {
+  const skill = { ...STARTER_SKILL_BY_ID["basic-swordsmanship"], skillTypeNames: ["远程攻击"] };
+  const skills = { ...STARTER_SKILL_BY_ID, [skill.id]: skill };
+  const baseline = run({ skills, monster: { health: 9999 }, maxRounds: 1 });
+  const baselineDamage = baseline.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1");
+  const ledger = new EffectLedger();
+  const effect = combatEffect({ "类型": "对技能效果的奖励", "技能": "远程攻击 类别的所有技能", "修正": "+5" }, "item", "rune", 0);
+  ledger.apply({ effectDefinitionId: effect.id, sourceActorId: "hero-1", sourceSkillId: effect.id, targetId: "hero-1",
+    appliedRound: 0, appliedPhase: "PreRoundCommandsExecuted", duration: { kind: "untilDungeonEnd" }, modifiers: effect.modifiers });
+  const hero = heroUnit();
+  assert.equal(effectiveSkillLevelOf(hero, skill.id, { effectLedger: ledger, skill }), effectiveSkillLevelOf(hero, skill.id, { skill }));
+  assert.deepEqual(skillEffectBonusTermsOf(hero, skill, ledger), [{ kind: "flat", value: 5 }]);
+  const equippedHero = heroUnit({ skills: { [skill.id]: { baseLevel: 4, effectBonusTerms: [{ kind: "percent", value: 10 }] } } });
+  assert.deepEqual(skillEffectBonusTermsOf(equippedHero, skill, ledger), [{ kind: "percent", value: 10 }, { kind: "flat", value: 5 }]);
+  assert.equal(effectiveSkillLevelOf(equippedHero, skill.id, { effectLedger: ledger, skill }), 4);
+  assert.deepEqual(skillEffectBonusTermsOf(hero, { ...skill, skillTypeNames: ["治疗技能"] }, ledger), []);
+  const modified = run({ skills, monster: { health: 9999 }, maxRounds: 1, effectLedger: ledger });
+  const modifiedDamage = modified.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1");
+  assert.equal(modifiedDamage.amount, baselineDamage.amount + 5);
+  assert.equal(modified.events.find((event) => event.type === "SkillAttempted" && event.actorId === "hero-1").actionSnapshot.skillLevel,
+    baseline.events.find((event) => event.type === "SkillAttempted" && event.actorId === "hero-1").actionSnapshot.skillLevel);
+});
+
+test("目标脆弱性按伤害和攻击方式、档位生效，负值为目标回血", () => {
+  const skill = { ...STARTER_SKILL_BY_ID["basic-swordsmanship"] };
+  const baseline = run({ monster: { health: 10 }, maxRounds: 1 });
+  const original = baseline.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1");
+  const grade = baseline.events.find((event) => event.type === "AttackResolved" && event.actorId === "hero-1").grade;
+  const effect = combatEffect({ "类型": "对此种攻击方式，攻击类型伤害的脆弱性", "伤害方式": skill.damageType ?? skill.attackType,
+    "攻击方式": skill.attackType, "奖励(r)": "-200 / -200 / -200" }, "item", "negative-vulnerability", 0);
+  const ledger = new EffectLedger();
+  ledger.apply({ effectDefinitionId: effect.id, sourceActorId: "hero-1", sourceSkillId: effect.id, targetId: "monster-1",
+    appliedRound: 0, appliedPhase: "PreRoundCommandsExecuted", duration: { kind: "untilDungeonEnd" }, modifiers: effect.modifiers });
+  const result = run({ monster: { health: 10 }, effectLedger: ledger, maxRounds: 1 });
+  const healing = result.events.find((event) => event.type === "HealingApplied" && event.reason === "vulnerability");
+  assert.ok(healing);
+  assert.equal(healing.amount, Math.min(original.amount, 31 - 10));
+  assert.match(renderEventsToText(result.events), /抗性超出预期/);
+  assert.ok(effect.modifiers.some((modifier) => modifier.target.grade === ({ "命中": "normal", "重击": "critical", "致命一击": "lethal" })[grade]));
+  const wrong = combatEffect({ "类型": "对此种攻击方式，攻击类型伤害的脆弱性", "伤害方式": "火焰伤害",
+    "攻击方式": "魔法", "奖励(r)": "-200 / -200 / -200" }, "item", "wrong-vulnerability", 0);
+  const wrongLedger = new EffectLedger();
+  wrongLedger.apply({ effectDefinitionId: wrong.id, sourceActorId: "hero-1", sourceSkillId: wrong.id, targetId: "monster-1",
+    appliedRound: 0, appliedPhase: "PreRoundCommandsExecuted", duration: { kind: "untilDungeonEnd" }, modifiers: wrong.modifiers });
+  const unmatched = run({ monster: { health: 10 }, effectLedger: wrongLedger, maxRounds: 1 });
+  assert.equal(unmatched.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1").amount, original.amount);
+});
+
+test("技能效果奖励按施法时的技能等级结算治疗", () => {
+  const healCommand = { skillId: "survival-bandage", repeat: "normal" };
+  const effect = combatEffect({ "类型": "对技能效果的奖励", "技能": "生存：包扎", "修正": "+50%×技能等级" }, "item", "rune-heal", 0);
+  const settings = (itemEffects) => plans({ preRound: [{ skillId: "guard-stance", itemEffects }], mainRound: [healCommand] }, { mainRound: [] });
+  const hero = { skills: { "survival-bandage": { baseLevel: 4 }, "guard-stance": { baseLevel: 4 } }, health: 10 };
+  const baseline = run({ hero, battlePlans: settings([]), maxRounds: 1 });
+  const healed = baseline.events.find((event) => event.type === "HealingApplied" && event.actorId === "hero-1");
+  assert.ok(healed);
+  const modified = run({ hero, battlePlans: settings([effect]), maxRounds: 1 });
+  const improved = modified.events.find((event) => event.type === "HealingApplied" && event.actorId === "hero-1");
+  assert.ok(improved);
+  assert.equal(improved.amount, healed.amount + 2);
+  assert.equal(modified.events.find((event) => event.type === "SkillAttempted" && event.skillId === "survival-bandage").actionSnapshot.skillLevel,
+    baseline.events.find((event) => event.type === "SkillAttempted" && event.skillId === "survival-bandage").actionSnapshot.skillLevel);
+});
+
+test("目标三档护甲和伤害奖励按伤害方式、攻击方式与命中档位生效", () => {
+  const baseline = run({ monster: { health: 9999 }, maxRounds: 1 });
+  const original = baseline.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1");
+  assert.ok(original);
+  const grade = baseline.events.find((event) => event.type === "AttackResolved" && event.actorId === "hero-1").grade;
+  const index = { "命中": 0, "重击": 1, "致命一击": 2 }[grade];
+  assert.notEqual(index, undefined);
+
+  const armor = combatEffect({ "类型": "护甲奖励", "伤害方式": "切割伤害", "攻击方式": "近战", "护甲(r)": "+2 / +4 / +6" }, "item", 1, 0);
+  const damage = combatEffect({ "类型": "伤害奖励", "伤害方式": "切割伤害", "攻击方式": "近战", "伤害奖励(r)": "+1 / +3 / +5" }, "item", 2, 0);
+  assert.deepEqual(armor.modifiers.map((modifier) => modifier.target.grade), ["normal", "critical", "lethal"]);
+  assert.deepEqual(damage.modifiers.map((modifier) => modifier.target.grade), ["normal", "critical", "lethal"]);
+  const ledger = new EffectLedger();
+  for (const [effect, targetId] of [[armor, "monster-1"], [damage, "hero-1"]]) {
+    ledger.apply({ effectDefinitionId: effect.id, sourceActorId: "hero-1", sourceSkillId: effect.id, targetId,
+      appliedRound: 0, appliedPhase: "PreRoundCommandsExecuted", duration: { kind: "untilDungeonEnd" }, modifiers: effect.modifiers });
+  }
+  const modified = run({ monster: { health: 9999 }, maxRounds: 1, effectLedger: ledger });
+  const applied = modified.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1");
+  assert.equal(applied.amount, Math.max(0, original.amount - [2, 4, 6][index]) + [1, 3, 5][index]);
+
+  const wrongScope = combatEffect({ "类型": "护甲奖励", "伤害方式": "火焰伤害", "攻击方式": "魔法", "护甲(r)": "+100 / +100 / +100" }, "item", 3, 0);
+  const otherLedger = new EffectLedger();
+  otherLedger.apply({ effectDefinitionId: wrongScope.id, sourceActorId: "hero-1", sourceSkillId: wrongScope.id, targetId: "monster-1",
+    appliedRound: 0, appliedPhase: "PreRoundCommandsExecuted", duration: { kind: "untilDungeonEnd" }, modifiers: wrongScope.modifiers });
+  const unmatched = run({ monster: { health: 9999 }, maxRounds: 1, effectLedger: otherLedger });
+  assert.equal(unmatched.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1").amount, original.amount);
+});
 
 test("物品每战斗次数换房间重置，每地城与剩余次数跨房间保留", () => {
   for (const [remainingCharges, usesPerDungeon, expectedRemaining] of [[2, 3, 0], [3, 2, 1]]) {

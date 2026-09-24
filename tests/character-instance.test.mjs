@@ -22,6 +22,20 @@ import {
 } from "../game/domain/character-instance.mjs";
 import { applyModifierPipeline } from "../game/modifiers/pipeline.mjs";
 
+test("角色实例保留脆弱性的独立百分比项及缩放后的固定百分点", () => {
+  const parsed = parseCorrection("0.34x英雄等级");
+  assert.equal(parsed.unparsed.length, 0);
+  assert.ok(Math.abs(resolveTerm(parsed.terms[0], { heroLevel: 20 }).value - 6.8) < 1e-9);
+  const target = { type: "vulnerability", damageType: "切割伤害", attackType: "近战", grade: "normal" };
+  const rows = buildCombatTables([
+    { target, kind: "percent", value: -20, sourceLabel: "装备一" },
+    { target, kind: "percent", value: -20, sourceLabel: "装备二" },
+    { target, kind: "flat", value: 6.8, sourceLabel: "等级换算" },
+  ]).vulnerability;
+  assert.deepEqual(rows[0].percentTerms[0], [-20, -20]);
+  assert.equal(rows[0].values[0], 6.8);
+});
+
 const HERO = {
   id: 1,
   name: "测试英雄",

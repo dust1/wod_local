@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "databaseFormatVersion": 24,
+  "databaseFormatVersion": 25,
   "databaseName": "game.sqlite",
   "description": "Local WOD runtime database schema contract; validates an existing database and cannot construct one.",
   "tables": {
@@ -961,6 +961,13 @@
           "nullable": false,
           "primaryKeyPosition": 0,
           "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "socketed_rune_item_ids",
+          "type": "TEXT",
+          "nullable": false,
+          "primaryKeyPosition": 0,
+          "default": "'[]'"
         }
       ],
       "indexes": [],

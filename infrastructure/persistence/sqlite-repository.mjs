@@ -465,15 +465,59 @@ export function createRepository(db) {
       return db.prepare(`SELECT hi.hero_id,hi.item_instance_id,
         CASE WHEN he.item_instance_id IS NULL THEN 0 ELSE 1 END is_equipped,
         he.equip_slot,hi.acquired_at,
-        i.id item_id,i.name,i.slot item_slot,i.min_level,i.max_level
+        i.id item_id,i.name,i.slot item_slot,i.min_level,i.max_level,ii.socketed_rune_item_ids
         FROM hero_inventory hi
         LEFT JOIN hero_equipment he ON he.hero_id=hi.hero_id AND he.item_instance_id=hi.item_instance_id
         JOIN item_instances ii ON ii.id=hi.item_instance_id JOIN items i ON i.id=ii.item_id
         WHERE hi.hero_id=? ORDER BY is_equipped DESC,i.slot,i.name,hi.item_instance_id`).all(Number(heroId));
     },
 
+    getSocketedRuneItemIds(instanceId) {
+      const row = db.prepare("SELECT socketed_rune_item_ids FROM item_instances WHERE id=?").get(Number(instanceId));
+      if (!row) return [];
+      try { return JSON.parse(row.socketed_rune_item_ids); } catch { return []; }
+    },
+
+    socketAncientRunes(heroId, userId, relicInstanceId, runeInstanceIds, allowedRuneItemIds, capacity) {
+      if (!this.getHero(heroId, userId)) throw new Error("英雄不存在");
+      const ids = runeInstanceIds.map(Number);
+      if (ids.length === 0 || ids.some((id) => !Number.isSafeInteger(id) || id <= 0) || new Set(ids).size !== ids.length)
+        throw new Error("符文实例无效或重复");
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const relic = db.prepare(`SELECT ii.socketed_rune_item_ids FROM hero_inventory hi
+          JOIN item_instances ii ON ii.id=hi.item_instance_id WHERE hi.hero_id=? AND hi.item_instance_id=?`)
+          .get(Number(heroId), Number(relicInstanceId));
+        if (!relic) throw new Error("遗物不在当前角色仓库");
+        const existing = JSON.parse(relic.socketed_rune_item_ids);
+        if (existing.length + ids.length > capacity) throw new Error("镶嵌数量超过孔位");
+        const lookup = db.prepare(`SELECT ii.item_id FROM hero_inventory hi JOIN item_instances ii ON ii.id=hi.item_instance_id
+          WHERE hi.hero_id=? AND hi.item_instance_id=? AND hi.is_equipped=0`);
+        const itemIds = ids.map((id) => {
+          const row = lookup.get(Number(heroId), id);
+          if (!row || !allowedRuneItemIds.includes(Number(row.item_id))) throw new Error("符文不在当前角色仓库或不是传古符文");
+          return Number(row.item_id);
+        });
+        db.prepare("UPDATE item_instances SET socketed_rune_item_ids=? WHERE id=?")
+          .run(JSON.stringify([...existing, ...itemIds]), Number(relicInstanceId));
+        const removeInventory = db.prepare("DELETE FROM hero_inventory WHERE hero_id=? AND item_instance_id=?");
+        const removeInstance = db.prepare("DELETE FROM item_instances WHERE id=?");
+        for (const id of ids) { removeInventory.run(Number(heroId), id); removeInstance.run(id); }
+        db.exec("COMMIT");
+        return [...existing, ...itemIds];
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+    },
+
+    clearSocketedRunes(heroId, userId, relicInstanceId) {
+      if (!this.getHero(heroId, userId)) throw new Error("英雄不存在");
+      const result = db.prepare(`UPDATE item_instances SET socketed_rune_item_ids='[]' WHERE id=?
+        AND EXISTS(SELECT 1 FROM hero_inventory WHERE hero_id=? AND item_instance_id=?)`)
+        .run(Number(relicInstanceId), Number(heroId), Number(relicInstanceId));
+      if (!result.changes) throw new Error("遗物不在当前角色仓库");
+    },
+
     listTeamInventory(userId) {
-      return db.prepare(`SELECT ti.user_id,ti.item_instance_id,ti.stored_at,i.id item_id,i.name,i.slot item_slot,i.min_level,i.max_level
+      return db.prepare(`SELECT ti.user_id,ti.item_instance_id,ti.stored_at,i.id item_id,i.name,i.slot item_slot,i.min_level,i.max_level,ii.socketed_rune_item_ids
         FROM team_inventory ti JOIN item_instances ii ON ii.id=ti.item_instance_id JOIN items i ON i.id=ii.item_id
         WHERE ti.user_id=? ORDER BY i.slot,i.name,ti.item_instance_id`).all(Number(userId));
     },
