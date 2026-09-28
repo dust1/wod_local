@@ -225,6 +225,13 @@ check(afterPurchase.items.some((entry) => entry.instanceId === sword.instanceId)
 check(afterPurchase.items.every((entry) => !entry.equipped), "购买的物品不应自动装备");
 console.log(`✓ 市场购买 instance=${sword.instanceId} ${sword.name}`);
 
+const saleCandidate = await post("/api/market/purchase", { heroId: created.id, itemId: sword.itemId });
+const goldBeforeSale = (await get(`/api/heroes/${created.id}`)).gold;
+const sale = await post(`/api/heroes/${created.id}/inventory/${saleCandidate.instanceId}/sell`);
+check(sale.price === 1 && sale.gold === goldBeforeSale + 1, "出售应使角色增加 1 金币");
+check(!(await get(`/api/heroes/${created.id}/inventory`)).items.some((entry) => entry.instanceId === saleCandidate.instanceId), "出售后实例仍在角色仓库");
+console.log(`✓ 角色仓库出售 instance=${saleCandidate.instanceId} 获得 1 金币`);
+
 const invalidRuneResponse = await fetch(`${base}/api/heroes/${created.id}/inventory/${sword.instanceId}/runes`, {
   method: "POST",
   headers: { "Content-Type": "application/json", Cookie: sessionCookie },

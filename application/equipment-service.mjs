@@ -113,6 +113,14 @@ function requirementReasons(hero, detail, item = null) {
       if (actual < expected) reasons.push(`需要装备至少 ${expected} 件${category}类别物品（当前 ${actual} 件）`);
       continue;
     }
+    const categoryMinimum = normalized.match(/^英雄必须装备至少([零一二两三四五六七八九十\d]+)件(.+?)物品$/);
+    if (categoryMinimum) {
+      const expected = parseItemCount(categoryMinimum[1]);
+      const category = categoryMinimum[2].trim();
+      const actual = equippedCategoryCount(hero, category, item, detail);
+      if (actual < expected) reasons.push(`需要装备至少 ${expected} 件${category}物品（当前 ${actual} 件）`);
+      continue;
+    }
     const categoryMaximum = normalized.match(/^英雄至多可以装备([零一二两三四五六七八九十\d]+)件(.+?)物品$/);
     if (categoryMaximum) {
       const expected = parseItemCount(categoryMaximum[1]);

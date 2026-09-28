@@ -61,6 +61,7 @@ export function createFloorPlan(input = {}) {
     initiativeSetEffects: (input.initiativeSetEffects ?? []).map((effect) => ({ ...effect })),
     preRound: (input.preRound ?? []).map(createCommand),
     mainRound: (input.mainRound ?? []).map(createCommand),
+    healing: Object.fromEntries(["light", "wounded", "severe"].map((wound) => [wound, (input.healing?.[wound] ?? []).map(createCommand)])),
   };
 }
 

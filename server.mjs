@@ -399,6 +399,13 @@ async function api(request, response, url) {
     } catch (error) { return json(response, 400, { error: error.message }); }
   }
   const equipMatch = path.match(/^\/api\/heroes\/(\d+)\/inventory\/(\d+)\/equip$/);
+  const sellMatch = path.match(/^\/api\/heroes\/(\d+)\/inventory\/(\d+)\/sell$/);
+  if (method === "POST" && sellMatch) {
+    try {
+      const result = repository.sellHeroInventoryItem(Number(sellMatch[1]), user.id, Number(sellMatch[2]));
+      return json(response, 200, result);
+    } catch (error) { return json(response, 400, { error: error.message }); }
+  }
   const runeMatch = path.match(/^\/api\/heroes\/(\d+)\/inventory\/(\d+)\/runes$/);
   if (method === "POST" && runeMatch) {
     try {

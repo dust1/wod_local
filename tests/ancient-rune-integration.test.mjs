@@ -223,7 +223,9 @@ function battleWithHero(unit, skillId, skillDefinition, health = null) {
     attributes: { strength: 8, constitution: 20, intelligence: 4, dexterity: 8, charisma: 4, agility: 1, perception: 1, willpower: 4 },
     skills: {}, health: 9999, mana: 0 });
   return simulateBattle({ initialState: { battleId: "rune-instance", floorNumber: 1, units: [hero, monster], preRoundOrder: [] },
-    battlePlans: { [hero.id]: { defaultPlan: { position: "front", preRound: [], mainRound: [{ skillId }] }, floorOverrides: {} },
+    battlePlans: { [hero.id]: { defaultPlan: { position: "front", preRound: [],
+      mainRound: skillDefinition.baseType === "heal" ? [] : [{ skillId }],
+      healing: skillDefinition.baseType === "heal" ? { severe: [{ skillId }] } : {} }, floorOverrides: {} },
       target: { defaultPlan: { position: "front", preRound: [], mainRound: [] }, floorOverrides: {} } },
     skills: { [skillId]: skillDefinition }, randomSeed: "rune-instance-seed", maxRounds: 1 });
 }

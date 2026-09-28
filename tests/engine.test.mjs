@@ -149,10 +149,87 @@ test("目标脆弱性按伤害和攻击方式、档位生效，负值为目标�
   assert.equal(unmatched.events.find((event) => event.type === "DamageApplied" && event.actorId === "hero-1").amount, original.amount);
 });
 
+function runHealingScenario({ target, members, healing, maxRounds = 1, effects = [], healthRecovery = [] }) {
+  const skill = { ...STARTER_SKILL_BY_ID["survival-bandage"], target, effects, healthRecovery };
+  const units = members.map((member) => {
+    const unit = heroUnit({ id: member.id, name: member.id, position: member.position ?? "front",
+      skills: { "survival-bandage": { baseLevel: 4 } }, baseStatDefaults: { healthMax: 1000, actionsPerRound: member.actions ?? 1 }, mana: 100 });
+    unit.health = member.health;
+    return unit;
+  });
+  units.push(monsterUnit({ health: 9999 }));
+  return simulateBattle({
+    initialState: { battleId: "healing-scenario", floorNumber: 1, units, preRoundOrder: [] },
+    battlePlans: Object.fromEntries([...members.map((member, index) => [member.id, createBattlePlan({ defaultPlan: {
+      position: member.position ?? "front", mainRound: [], healing: index === 0 ? healing : {},
+    } })]), ["monster-1", createBattlePlan({ defaultPlan: { mainRound: [] } })]]),
+    skills: { ...STARTER_SKILL_BY_ID, [skill.id]: skill }, randomSeed: "healing-scenario", maxRounds,
+  });
+}
+
+test("自身治疗不因队友受伤中断，同位置治疗优先最低血量且同值保持队伍顺序", () => {
+  const healing = { light: [{ skillId: "survival-bandage" }] };
+  const members = [{ id: "healer", health: 1000 }, { id: "first", health: 700, position: "rear" }, { id: "second", health: 500, position: "front" }];
+  const self = runHealingScenario({ target: { side: "ally", mode: "self", maxTargets: 1 }, members, healing });
+  assert.equal(self.events.some((event) => event.type === "HealingApplied" && event.actorId === "healer"), false);
+  const samePosition = runHealingScenario({ target: { side: "ally", mode: "samePositionAoE", maxTargets: 1 }, members, healing });
+  assert.equal(samePosition.events.find((event) => event.type === "HealingApplied")?.targetId, "second");
+  const tied = runHealingScenario({ target: { side: "ally", mode: "samePositionAoE", maxTargets: 1 },
+    members: [{ id: "healer", health: 1000 }, { id: "first", health: 500, position: "rear" }, { id: "second", health: 500, position: "front" }], healing });
+  assert.equal(tied.events.find((event) => event.type === "HealingApplied")?.targetId, "first");
+});
+
+test("全体治疗由任一队友触发；再次触发只回血且不刷新同名 Buff", () => {
+  const healing = { severe: [{ skillId: "survival-bandage" }] };
+  const effect = { id: "heal-buff", duration: { kind: "rounds", value: 3 }, modifiers: [{ target: { type: "attribute", key: "perception" }, kind: "flat", value: 1 }] };
+  const result = runHealingScenario({ target: { side: "ally", mode: "globalAoE", maxTargets: 1 },
+    members: [{ id: "healer", health: 1000 }, { id: "ally", health: 100, position: "rear" }], healing, effects: [effect], maxRounds: 2 });
+  assert.ok(result.events.some((event) => event.type === "HealingApplied" && event.targetId === "ally"));
+  assert.equal(result.events.filter((event) => event.type === "EffectApplied" && event.targetId === "ally").length, 1);
+  assert.ok(result.events.filter((event) => event.type === "HealingApplied" && event.targetId === "ally").length >= 2);
+});
+
+test("治疗数值应用技能体力恢复字段的修正", () => {
+  const options = { target: { side: "ally", mode: "self", maxTargets: 1 },
+    members: [{ id: "healer", health: 100 }], healing: { severe: [{ skillId: "survival-bandage" }] } };
+  const baseline = runHealingScenario(options).events.find((event) => event.type === "HealingApplied");
+  const modified = runHealingScenario({ ...options, healthRecovery: [{ kind: "flat", value: 5 }] })
+    .events.find((event) => event.type === "HealingApplied");
+  assert.equal(modified.amount, baseline.amount + 5);
+});
+
+test("治疗中断按命中的最严重档位和配置顺序选择技能", () => {
+  const options = { target: { side: "ally", mode: "self", maxTargets: 1 }, members: [{ id: "healer", health: 500 }],
+    healing: { light: [{ skillId: "survival-bandage", itemIds: ["light"] }],
+      wounded: [{ skillId: "survival-bandage", itemIds: ["wounded"] }],
+      severe: [{ skillId: "survival-bandage", itemIds: ["severe"] }] } };
+  const severe = runHealingScenario(options).events.find((event) => event.type === "SkillAttempted" && event.skillId === "survival-bandage");
+  assert.deepEqual(severe.itemIds, ["severe"]);
+  const wounded = runHealingScenario({ ...options, members: [{ id: "healer", health: 750 }] })
+    .events.find((event) => event.type === "SkillAttempted" && event.skillId === "survival-bandage");
+  assert.deepEqual(wounded.itemIds, ["wounded"]);
+});
+
+test("治疗附加的自身技能等级负效使下一行动点不再触发同一治疗", () => {
+  const skillId = "skill-198";
+  const effect = combatEffect({ "类型": "对技能等级的奖励", "技能": "天赋：巨魔后裔", "修正": "-999", "持续时间": "无限制" },
+    "skill", skillId, 0, new Map([["天赋：巨魔后裔", skillId]]));
+  const skill = { ...STARTER_SKILL_BY_ID["survival-bandage"], id: skillId, name: "天赋：巨魔后裔",
+    target: { side: "ally", mode: "self", maxTargets: 1 }, effects: [effect] };
+  const hero = heroUnit({ skills: { [skillId]: { baseLevel: 14 } }, baseStatDefaults: { healthMax: 1000, actionsPerRound: 3 }, health: 100, mana: 100 });
+  const result = simulateBattle({ initialState: { battleId: "troll-healing", floorNumber: 1,
+    units: [hero, monsterUnit({ health: 9999 })], preRoundOrder: [] },
+    battlePlans: plans({ mainRound: [], healing: { severe: [{ skillId }] } }, { mainRound: [] }),
+    skills: { [skillId]: skill }, randomSeed: "troll-healing", maxRounds: 2 });
+  assert.equal(result.events.filter((event) => event.type === "SkillAttempted" && event.skillId === skillId).length, 1);
+  assert.equal(result.events.filter((event) => event.type === "HealingApplied" && event.actorId === "hero-1").length, 1);
+  assert.equal(result.events.filter((event) => event.type === "EffectApplied" && event.sourceSkillId === skillId).length, 1);
+});
+
 test("技能效果奖励按施法时的技能等级结算治疗", () => {
   const healCommand = { skillId: "survival-bandage", repeat: "normal" };
   const effect = combatEffect({ "类型": "对技能效果的奖励", "技能": "生存：包扎", "修正": "+50%×技能等级" }, "item", "rune-heal", 0);
-  const settings = (itemEffects) => plans({ preRound: [{ skillId: "guard-stance", itemEffects }], mainRound: [healCommand] }, { mainRound: [] });
+  const settings = (itemEffects) => plans({ preRound: [{ skillId: "guard-stance", itemEffects }], mainRound: [], healing: { severe: [healCommand] } }, { mainRound: [] });
   const hero = { skills: { "survival-bandage": { baseLevel: 4 }, "guard-stance": { baseLevel: 4 } }, health: 10 };
   const baseline = run({ hero, battlePlans: settings([]), maxRounds: 1 });
   const healed = baseline.events.find((event) => event.type === "HealingApplied" && event.actorId === "hero-1");

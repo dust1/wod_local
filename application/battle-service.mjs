@@ -118,14 +118,35 @@ function initiativeAttributeBinding(skill, repository, root) {
   return null;
 }
 
+function healingFields(skill, repository, root) {
+  if (skill.baseType !== "heal" || !Number.isFinite(Number(skill.sourceId))) return {};
+  for (const scope of ["profession", "race"]) {
+    const metadata = repository?.getSkillDetailMetadata?.(scope, Number(skill.sourceId));
+    if (!metadata?.json_path) continue;
+    let detail;
+    try { detail = JSON.parse(readFileSync(resolve(root, metadata.json_path), "utf8"))["详细属性"]; } catch { continue; }
+    const [primaryName, secondaryName] = String(detail?.["治疗"] ?? "").split(/[,，]/).map((part) => part.trim().replace(/\s*\(.*/, ""));
+    const primary = ATTRIBUTE_TARGET_KEYS[primaryName];
+    const secondary = ATTRIBUTE_TARGET_KEYS[secondaryName];
+    const recoveryText = String(detail?.["体力恢复"] ?? "");
+    return {
+      ...(primary && secondary ? { healingFormula: { primary, secondary } } : {}),
+      healthRecovery: parseCorrection(recoveryText).terms,
+    };
+  }
+  return {};
+}
+
 /** 把目录中的技能目标效果转换为引擎可直接施加的效果。 */
 function battleSkillDefinitions(catalog, repository, root = process.cwd()) {
   const skillIdByName = new Map([...catalog.skills.values()].map((skill) => [skill.name, skill.id]));
   return Object.fromEntries([...catalog.skills].map(([id, skill]) => {
     const initiative = initiativeAttributeBinding(skill, repository, root);
+    const healing = healingFields(skill, repository, root);
     return [id, {
       ...skill,
-      attributeFormula: { ...(skill.attributeFormula ?? {}), ...(initiative ? { initiative } : {}) },
+      ...healing,
+      attributeFormula: { ...(skill.attributeFormula ?? {}), ...(initiative ? { initiative } : {}), ...(healing.healingFormula ? { damage: healing.healingFormula } : {}) },
       effects: (skill.targetEffects ?? skill.effects ?? []).map((effect, index) => combatEffect(effect, "skill", id, index, skillIdByName)),
     }];
   }));
@@ -233,6 +254,7 @@ export function attachCalledItemEffects(plan, instance, catalog, repository, roo
   for (const layer of [plan.defaultPlan, ...Object.values(plan.floorOverrides ?? {})]) {
     layer.preRound = (layer.preRound ?? []).map(enrich);
     layer.mainRound = (layer.mainRound ?? []).map(enrich);
+    layer.healing = Object.fromEntries(["light", "wounded", "severe"].map((wound) => [wound, (layer.healing?.[wound] ?? []).map(enrich)]));
     const initiative = enrich({ itemIds: layer.initiativeItemIds ?? (layer.initiativeItemId == null ? [] : [layer.initiativeItemId]) });
     layer.initiativeItemEffects = initiative.itemEffects;
     layer.initiativeSetEffects = initiative.setEffects;

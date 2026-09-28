@@ -121,6 +121,35 @@ test("市场统一以 1 金币出售物品并放入角色仓库", () => {
   cleanup(db, path);
 });
 
+test("角色仓库出售指定未装备实例并只增加 1 金币", () => {
+  const { db, path, repository } = freshRepository();
+  seedItems(db);
+  const user = createUser(db, repository, "seller");
+  const otherUser = createUser(db, repository, "other_seller");
+  const hero = repository.createHero(user.id, validateHeroInput({ name: "卖家", raceId: "dinturan", professionId: "adventurer", gender: "male" }));
+  const otherHero = repository.createHero(otherUser.id, validateHeroInput({ name: "其他卖家", raceId: "dinturan", professionId: "adventurer", gender: "male" }));
+  const soldId = grantItem(db, hero.id, 9001);
+  const keptId = grantItem(db, hero.id, 9001);
+  const equippedId = grantItem(db, hero.id, 9075, { equipped: true });
+  const otherId = grantItem(db, otherHero.id, 9001);
+  const beforeGold = repository.getHero(hero.id, user.id).gold;
+  const otherGold = repository.getHero(otherHero.id, otherUser.id).gold;
+
+  assert.throws(() => repository.sellHeroInventoryItem(hero.id, user.id, equippedId), /装备状态/);
+  assert.throws(() => repository.sellHeroInventoryItem(hero.id, user.id, otherId), /不在该角色仓库/);
+  assert.throws(() => repository.sellHeroInventoryItem(otherHero.id, user.id, otherId), /英雄不存在/);
+  assert.equal(repository.getHero(hero.id, user.id).gold, beforeGold);
+
+  const result = repository.sellHeroInventoryItem(hero.id, user.id, soldId);
+  assert.deepEqual(result, { instanceId: soldId, name: "测试分页物品A", price: 1, gold: beforeGold + 1 });
+  assert.equal(db.prepare("SELECT 1 FROM item_instances WHERE id=?").get(soldId), undefined);
+  assert.deepEqual(heroInventoryDto(repository, hero.id, user.id).items.map((item) => item.instanceId).sort((a, b) => a - b), [keptId, equippedId].sort((a, b) => a - b));
+  assert.equal(repository.getHero(otherHero.id, otherUser.id).gold, otherGold);
+  assert.throws(() => repository.sellHeroInventoryItem(hero.id, user.id, soldId), /不在该角色仓库/);
+  assert.equal(repository.getHero(hero.id, user.id).gold, beforeGold + 1);
+  cleanup(db, path);
+});
+
 test("市场按名称包含关系搜索，并保持结果总数与分页一致", () => {
   const { db, path, repository } = freshRepository();
   seedItems(db);
@@ -602,6 +631,22 @@ test("装备要求可按物品类别统计当前实际装备的实例数量", ()
   const rejected = validateItemEquipability({ hero: { ...hero, equippedItems: hero.equippedItems.slice(0, 2) }, item: {}, itemDetail: requirement });
   assert.equal(rejected.allowed, false);
   assert.match(rejected.reasons[0], /至少 3 件书籍类别物品（当前 2 件）/);
+});
+
+test("银色包袱的至少一件财宝物品要求识别已装备的宝石圣甲虫", () => {
+  const detail = { "装备要求": ["英雄必须装备至少一件财宝物品"] };
+  const item = { instanceId: 31581 };
+  const hero = { heroLevel: 33, attributes: [], skills: [], equippedItems: [
+    { instanceId: 31580, name: "宝石圣甲虫", itemTypes: ["传古符文", "财宝"] },
+  ] };
+  assert.deepEqual(validateItemEquipability({ hero, item, itemDetail: detail }), { allowed: true, reasons: [] });
+  assert.deepEqual(itemEquipabilityConditions({ hero, itemDetail: detail }).requirements.map((entry) => entry.met), [true]);
+
+  const withoutTreasure = { ...hero, equippedItems: [] };
+  const rejected = validateItemEquipability({ hero: withoutTreasure, item, itemDetail: detail });
+  assert.equal(rejected.allowed, false);
+  assert.match(rejected.reasons[0], /财宝物品（当前 0 件）/);
+  assert.deepEqual(itemEquipabilityConditions({ hero: withoutTreasure, itemDetail: detail }).requirements.map((entry) => entry.met), [false]);
 });
 
 test("物品类别装备上限按包含候选物品的换装结果计数且不重复计算已装备实例", () => {

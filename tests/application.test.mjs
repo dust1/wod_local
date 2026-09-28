@@ -143,6 +143,25 @@ test("角色行动设置拒绝保存未学习技能", () => {
   assert.throws(() => normalizeActionSettings({ defaultLayer: { actions: { initiative: [], preRound: [], mainRound: [{ skillId: "not-learned" }] } } }, ["known"]), /未学习/);
 });
 
+test("治疗设置按伤势保存技能与调用物品，单独进入战斗治疗配置", () => {
+  const { db, repository } = freshRepository();
+  const settings = normalizeActionSettings({ defaultLayer: { healing: {
+    light: [{ skillId: "heal-a", itemIds: [42, 43] }],
+    wounded: [{ skillId: "heal-b" }],
+    severe: [{ skillId: "heal-a" }],
+  } } }, ["heal-a", "heal-b"]);
+  repository.upsertHeroActionSettings(1, settings);
+  const restored = actionSettingsDto(repository.getHeroActionSettings(1));
+  assert.deepEqual(restored.defaultLayer.healing.light, [{ skillId: "heal-a", itemIds: ["42", "43"] }]);
+  assert.equal(restored.defaultLayer.healing.wounded[0].skillId, "heal-b");
+  assert.deepEqual(restored.defaultLayer.healing.severe[0].itemIds, []);
+  const plan = actionSettingsToBattlePlan(restored, 1);
+  assert.deepEqual(plan.defaultPlan.mainRound, []);
+  assert.deepEqual(plan.defaultPlan.healing.light[0].itemIds, ["42", "43"]);
+  db.close();
+  cleanup();
+});
+
 test("角色行动设置允许保存干等并转换为战斗指令", () => {
   const settings = normalizeActionSettings({
     defaultLayer: { actions: { mainRound: [{ id: "wait-1", skillId: "__wait__" }] } },

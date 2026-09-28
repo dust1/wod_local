@@ -7,6 +7,7 @@ const phases = [
   { id: "mainRound", title: "回合中", timing: "mainAction" },
 ];
 const WAIT_COMMAND_SKILL_ID = "__wait__";
+const healingWounds = [{ id: "light", label: "轻伤" }, { id: "wounded", label: "受伤" }, { id: "severe", label: "重伤" }];
 
 function newAction(phase, positionIds) {
   return { id: `${phase}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, skillId: null, itemIds: [], repeat: "normal", positions: positionIds.map((id) => ({ id, enabled: true })) };
@@ -85,8 +86,37 @@ function collectItemIssues(settings, skills) {
     }
   };
   collect("默认层", settings.defaultLayer);
+  collect("默认层治疗设置", { actions: settings.defaultLayer?.healing });
   for (const [floor, entry] of Object.entries(settings.floors ?? {})) collect(`第 ${floor} 层`, entry);
   return issues;
+}
+
+function HealingSetting({ healing, allSkills, onChange }) {
+  const skills = allSkills.filter((skill) => skill.baseType === "heal");
+  const update = (wound, entries) => onChange({ ...healing, [wound]: entries });
+  return <section className="healing-setting">
+    <h2>治疗设置</h2>
+    {healingWounds.map(({ id, label }) => {
+      const entries = healing?.[id] ?? [];
+      return <div className="healing-tier" key={id}>
+        <strong>{label}</strong>
+        <div className="healing-entries">{entries.map((entry, index) => {
+          const skill = findSkill(skills, entry.skillId);
+          const replace = (patch) => update(id, entries.map((current, currentIndex) => currentIndex === index ? { ...current, ...patch } : current));
+          return <div className="healing-entry" key={index}>
+            <label>技能 {index + 1}<select value={entry.skillId} onChange={(event) => replace({ skillId: event.target.value, itemIds: [] })}>
+              <option value="">请选择治疗技能</option>
+              {skills.map((candidate) => <option key={candidate.skillId} value={candidate.skillId}>{candidate.name}</option>)}
+            </select></label>
+            <ItemPicker action={entry} skill={skill} onChange={(itemIds) => replace({ itemIds })} />
+            <ItemHint action={entry} skill={skill} />
+            <button type="button" onClick={() => update(id, entries.filter((_, currentIndex) => currentIndex !== index))}>删除</button>
+          </div>;
+        })}</div>
+        <button type="button" disabled={entries.length >= 5 || skills.length === 0} onClick={() => update(id, [...entries, { skillId: skills[0].skillId, itemIds: [] }])}>＋ 添加治疗技能（{entries.length}/5）</button>
+      </div>;
+    })}
+  </section>;
 }
 
 function InitiativeSetting({ actions, allSkills, positionIds, onChange }) {
@@ -143,7 +173,7 @@ function ActionSection({ phase, actions, allSkills, positions, repeatModes, onCh
   useEffect(() => { if (selectedId && !actions.some((action) => action.id === selectedId)) setSelectedId(actions[0]?.id ?? null); }, [actions, selectedId]);
   const selectedIndex = actions.findIndex((action) => action.id === selectedId);
   const selected = actions[selectedIndex] ?? null;
-  const availableSkills = allSkills.filter((skill) => skill.timing?.[phase.timing]);
+  const availableSkills = allSkills.filter((skill) => skill.timing?.[phase.timing] && skill.baseType !== "heal");
   const move = (delta) => {
     const destination = selectedIndex + delta;
     if (selectedIndex < 0 || destination < 0 || destination >= actions.length) return;
@@ -225,6 +255,7 @@ export default function SettingsPage({ heroId, detail, catalog, loading, error }
       {!floor && <div className="position-setting"><h2>在战斗中的位置</h2><select value={activeLayer.position} onChange={(event) => updateLayer({ position: event.target.value })}>{Object.entries(positions).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>}
       <InitiativeSetting actions={activeLayer.actions.initiative} allSkills={allSkills} positionIds={Object.keys(positions)} onChange={(actions) => updateLayer({ actions: { ...activeLayer.actions, initiative: actions } })} />
       {phases.map((phase) => <ActionSection key={`${layer}-${phase.id}`} phase={phase} actions={activeLayer.actions[phase.id]} allSkills={allSkills} positions={positions} repeatModes={repeatModes} onChange={(actions) => updateLayer({ actions: { ...activeLayer.actions, [phase.id]: actions } })} />)}
+      {!floor && <HealingSetting healing={activeLayer.healing} allSkills={allSkills} onChange={(healing) => updateLayer({ healing })} />}
       {itemIssues.length > 0 && <ul className="action-item-issues">{itemIssues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}
       <div className="settings-save"><button className="wod-button" onClick={save} disabled={status === "saving" || itemIssues.length > 0} title={itemIssues.length > 0 ? "请先解决上方调用物品问题" : undefined}>{status === "saving" ? "保存中……" : "保存角色行动设置"}</button><button className="settings-reset" onClick={() => setDraft(structuredClone(saved))}>撤销未保存改动</button>{status === "saved" && <span>设置已保存。</span>}{status?.startsWith("error") && <span className="warning">{status}</span>}</div>
     </> : <div className="override-empty">本层当前沿用默认层设置。勾选“覆盖默认层设置”后可配置专属行动。</div>}

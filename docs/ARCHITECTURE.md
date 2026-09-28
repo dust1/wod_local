@@ -6,6 +6,8 @@
 
 `game/domain/` 定义角色、技能、物品、属性和效果；`game/formulas/` 是训练、资源、命中、伤害等计算；`game/modifiers/` 处理加成顺序；`game/commands/` 表达行动计划与游标；`game/targeting/` 选目标；`game/engine/` 建战斗单位并执行回合；`game/events/` 产生和渲染本地战报；`game/replay/envelope.mjs` 校验本地模拟事件的可复现性；`game/policies/` 收容未核实或可替换规则。战斗状态由 `simulateBattle`/`EffectLedger` 持有，不应由 UI 镜像计算。原版 HTML 战报导入不属于当前架构。
 
+角色默认层的三档治疗技能由行动设置 JSON 进入战斗方案的 `healing` 字段，调用物品沿用普通指令的装配流程。引擎在每个行动点先检查当前生命比例和技能目标，再决定是否中断普通行动；同名治疗效果由效果账本保持首次施加的持续时间，后续施放仍结算体力恢复。
+
 `application/` 负责账号、英雄训练、装备、背包、市场、行动设置、地城探索等用例。角色实例在 `character-instance-service` 从基础角色、技能、装备和目录生成；战斗服务将其转换为战斗单位，按地城配置逐场运行，再保存输入快照、结果和报告。`gamedata/generated/` 是导入目录，`gamedata/overrides/` 是手工内容；数据库保存运行时用户、角色、物品和战报。`docs/database-schema.json` 是启动校验契约，不是自动迁移指令。
 
 SQLite 仓库在所有装备写入入口校验同物品的英雄唯一/队伍唯一，依据物品详情源数据。角色实例读取三种使用次数并附到行动调用物品上。一次探索持有地城物品使用状态，逐房间传入 `simulateBattle`；每次战斗另建房间计数。剩余次数耗尽仅阻止该模拟后续调用，不改仓库或物品实例。装备耐久没有运行时状态。

@@ -8,7 +8,7 @@ import { DEFAULT_DECAY_POLICY, createLinearDecayPolicy, noDecayPolicy, stableTie
 import { floorRoundingPolicy, roundHalfUpPolicy } from "../formulas/calculation.mjs";
 import { zeroReductionPolicy, createLinearReductionPolicy, DEFAULT_DAMAGE_PIPELINE, zeroHitGradePercents } from "../formulas/damage-pipeline.mjs";
 import { defaultFailureCostPolicy } from "../commands/cursor.mjs";
-import { defaultWoundThresholdPolicy, defaultHealingPriorityPolicy } from "../commands/healing.mjs";
+import { defaultWoundThresholdPolicy } from "../commands/healing.mjs";
 import { randomWithinPositionPolicy, stableWithinPositionPolicy } from "../targeting/select.mjs";
 import { defaultEvadeAttributePolicy } from "../engine/simulate.mjs";
 import { SLOT_CONFLICTS, ONE_HAND_SLOT_ID } from "../domain/item.mjs";
@@ -40,14 +40,13 @@ export const POLICY_REGISTRY = [
   { id: "pipeline:wod-textbook-v1", evidenceLevel: "B", experimental: false, description: "教材伤害管线顺序", ruleQuestionId: "damage-order-z-item-global", impl: DEFAULT_DAMAGE_PIPELINE },
   { id: "hitGrade:zero-percents", evidenceLevel: "D", experimental: true, description: "命中等级伤害修正全为 0", ruleQuestionId: "damage-order-z-item-global", impl: zeroHitGradePercents },
   { id: "failureCost:default-failure-cost", evidenceLevel: "D", experimental: true, description: "结构性失败不消耗行动；主回合一整圈都无可执行指令算本次行动失败并消耗行动点（无法执行任何行动）", ruleQuestionId: "failed-attempt-cost", impl: defaultFailureCostPolicy },
-  { id: "woundThreshold:default-wound-thresholds", evidenceLevel: "D", experimental: true, description: "轻伤 90% / 受伤 60% / 重伤 30%", ruleQuestionId: "wound-thresholds", impl: defaultWoundThresholdPolicy },
-  { id: "healingPriority:default-healing-priority", evidenceLevel: "D", experimental: true, description: "治疗触发器 1 至 5 优先级，英雄优先", ruleQuestionId: "healing-formula", impl: defaultHealingPriorityPolicy },
+  { id: "woundThreshold:default-wound-thresholds", evidenceLevel: "B", experimental: false, description: "轻伤 ≤90% / 受伤 ≤75% / 重伤 ≤50%", ruleQuestionId: "wound-thresholds", impl: defaultWoundThresholdPolicy },
   { id: "withinPosition:random-within-position", evidenceLevel: "D", experimental: true, description: "站位内随机排序", ruleQuestionId: "within-position-order", impl: randomWithinPositionPolicy },
   { id: "withinPosition:stable-input-order", evidenceLevel: "D", experimental: true, description: "站位内保持输入顺序", ruleQuestionId: "within-position-order", impl: stableWithinPositionPolicy },
   { id: "slots:two-hands-conflict", evidenceLevel: "C", experimental: true, description: "双手与左右手互斥", ruleQuestionId: "hand-slot-occupancy", impl: { id: "slots:two-hands-conflict", conflicts: SLOT_CONFLICTS } },
   { id: "slots:one-hand-occupancy", evidenceLevel: "C", experimental: true, description: "单手物品占用一只空手，与双手物品互斥", ruleQuestionId: "hand-slot-occupancy", impl: { id: "slots:one-hand-occupancy", oneHand: ONE_HAND_SLOT_ID } },
   { id: "modifier:randomFlat", evidenceLevel: "D", experimental: true, description: "随机固定加值借用 RollPolicy 求值", ruleQuestionId: "random-flat-range", impl: { id: "modifier:randomFlat" } },
-  { id: "heal:damage-mean-reuse", evidenceLevel: "D", experimental: true, description: "治疗量借用伤害平均值公式，治疗命中规则未确认", ruleQuestionId: "healing-formula", impl: { id: "heal:damage-mean-reuse" } },
+  { id: "heal:damage-mean-reuse", evidenceLevel: "D", experimental: true, description: "治疗投点沿用平均值公式，并应用技能体力恢复修正；治疗投点规则仍待核验", ruleQuestionId: "healing-formula", impl: { id: "heal:damage-mean-reuse" } },
   { id: "battleEnd:last-side-standing", evidenceLevel: "D", experimental: true, description: "一方全部倒下即结束战斗", ruleQuestionId: "defeat-escape-victory", impl: { id: "battleEnd:last-side-standing" } },
   { id: "defaultPlan:first-available-skill", evidenceLevel: "D", experimental: true, description: "无显式方案的单位按已知技能生成确定性兜底方案", ruleQuestionId: null, impl: { id: "defaultPlan:first-available-skill" } },
 ];

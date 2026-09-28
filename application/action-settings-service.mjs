@@ -1,15 +1,18 @@
 import { POSITION_LABELS } from "../game/domain/positions.mjs";
 import { createBattlePlan, REPEAT_MODES, WAIT_COMMAND_SKILL_ID } from "../game/commands/battle-plan.mjs";
 import { equippedItemPool } from "./character-instance-service.mjs";
-import { itemRequirementResolver, validateSkillItemSelections } from "./skill-item-service.mjs";
+import { catalogSkillForId, itemRequirementResolver, validateSkillItemSelections } from "./skill-item-service.mjs";
 
 export const ACTION_SETTINGS_VERSION = 1;
 export const ACTION_PHASES = Object.freeze(["initiative", "preRound", "mainRound"]);
 
 const defaultPositions = () => Object.keys(POSITION_LABELS).map((id) => ({ id, enabled: true }));
+const healingWounds = ["light", "wounded", "severe"];
+const emptyHealing = () => ({ light: [], wounded: [], severe: [] });
 const emptyLayer = (withPosition = true) => ({
   ...(withPosition ? { position: "rear" } : {}),
   actions: { initiative: [], preRound: [], mainRound: [] },
+  ...(withPosition ? { healing: emptyHealing() } : {}),
 });
 
 export function defaultActionSettings() {
@@ -52,6 +55,11 @@ function normalizeLayer(layer, withPosition, skillIds = new Set()) {
   return {
     ...(withPosition ? { position: POSITION_LABELS[layer?.position] ? layer.position : "rear" } : {}),
     actions,
+    ...(withPosition ? { healing: Object.fromEntries(healingWounds.map((wound) => [wound,
+      (Array.isArray(layer?.healing?.[wound]) ? layer.healing[wound] : []).slice(0, 5)
+        .map((entry) => ({ skillId: String(entry?.skillId ?? ""), itemIds: Array.isArray(entry?.itemIds) ? entry.itemIds.filter(Boolean).map(String) : entry?.itemId == null ? [] : [String(entry.itemId)] }))
+        .filter((entry) => entry.skillId),
+    ])) } : {}),
   };
 }
 
@@ -93,12 +101,26 @@ export function saveActionSettings(repository, heroId, input, options = {}) {
     ...repository.listTrainedHeroSkillIds(heroId).map((skill) => `skill-${skill.source_skill_id}`),
   ];
   const normalized = normalizeActionSettings(input, learnedIds);
+  for (const wound of healingWounds) {
+    const entries = input?.defaultLayer?.healing?.[wound];
+    if (Array.isArray(entries) && entries.length > 5) throw new Error("每档最多设置五个治疗技能");
+    for (const entry of normalized.defaultLayer.healing[wound]) {
+      if (!learnedIds.map(String).includes(entry.skillId) || catalogSkillForId(catalog, entry.skillId)?.baseType !== "heal") {
+        throw new Error(`治疗设置包含未学习或非治疗技能: ${entry.skillId}`);
+      }
+    }
+  }
   const equippedItems = equippedItemPool({ repository, root, heroId, userId });
   const issues = validateSkillItemSelections({
     settings: normalized,
     requirementFor: itemRequirementResolver(catalog, equippedItems),
   });
   if (issues.length > 0) throw new Error(`行动设置未通过校验：${issues.join("；")}`);
+  const healingIssues = validateSkillItemSelections({
+    settings: { defaultLayer: { actions: normalized.defaultLayer.healing } },
+    requirementFor: itemRequirementResolver(catalog, equippedItems),
+  });
+  if (healingIssues.length > 0) throw new Error(`治疗设置未通过校验：${healingIssues.join("；")}`);
   return actionSettingsDto(repository.upsertHeroActionSettings(heroId, normalized));
 }
 
@@ -121,6 +143,9 @@ export function actionSettingsToBattlePlan(settings, heroId, name = "角色行�
     initiativeItemIds: entry.actions.initiative[0]?.itemIds ?? [],
     preRound: entry.actions.preRound.filter((entry) => entry.skillId).map(command),
     mainRound: entry.actions.mainRound.filter((entry) => entry.skillId).map(command),
+    healing: Object.fromEntries(healingWounds.map((wound) => [wound,
+      normalized.defaultLayer.healing[wound].map((healing, index) => ({ id: `healing-${wound}-${index}`, skillId: healing.skillId, itemIds: healing.itemIds })),
+    ])),
   });
   const floorOverrides = {};
   for (const [floor, entry] of Object.entries(normalized.floors)) {

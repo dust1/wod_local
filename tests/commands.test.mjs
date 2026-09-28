@@ -16,10 +16,7 @@ import {
 } from "../game/commands/battle-plan.mjs";
 import {
   assessWounds,
-  collectHealingTriggers,
-  selectHealingInterrupt,
   WOUND_LABELS,
-  defaultHealingPriorityPolicy,
 } from "../game/commands/healing.mjs";
 import {
   EQUIP_SLOTS,
@@ -165,39 +162,16 @@ test("层方案默认值完整", () => {
   assert.deepEqual(plan.mainRound, []);
 });
 
-test("受伤阈值：低于 90% 至少视为轻伤", () => {
+test("受伤阈值包含 90%、75%、50% 边界", () => {
   assert.equal(assessWounds({ current: 100, max: 100 }).state, "healthy");
-  assert.equal(assessWounds({ current: 90, max: 100 }).state, "healthy");
+  assert.equal(assessWounds({ current: 90, max: 100 }).state, "light");
   assert.equal(assessWounds({ current: 89.9, max: 100 }).state, "light");
+  assert.equal(assessWounds({ current: 75, max: 100 }).state, "wounded");
+  assert.equal(assessWounds({ current: 50, max: 100 }).state, "severe");
   assert.equal(assessWounds({ current: 0, max: 100 }).state, "down");
   assert.equal(WOUND_LABELS.light, "轻伤");
   assert.equal(WOUND_LABELS.severe, "重伤");
   assert.equal(assessWounds({ current: 100, max: 100 }).policyId, "default-wound-thresholds");
-});
-
-test("治疗触发器按优先级排序，英雄优先于召唤物", () => {
-  const units = [
-    { id: "hero", name: "英雄", side: "attacker", kind: "hero", alive: true, health: 10, healthMax: 100 },
-    { id: "summon", name: "狼", side: "attacker", kind: "summon", alive: true, health: 10, healthMax: 100 },
-    { id: "enemy", name: "敌人", side: "defender", kind: "monster", alive: true, health: 1, healthMax: 100 },
-  ];
-  const triggers = collectHealingTriggers({ units, actorId: "hero" });
-  assert.deepEqual(triggers.map((trigger) => trigger.unitId), ["hero", "summon"]);
-  assert.equal(triggers[0].priority, 1);
-  assert.equal(triggers[1].priority, 4);
-  assert.equal(defaultHealingPriorityPolicy.experimental, true);
-});
-
-test("治疗中断选择最高优先级触发器", () => {
-  const chosen = selectHealingInterrupt({
-    healingCommands: [{ id: "h1", skillId: "bandage" }],
-    triggers: [{ unitId: "u1", unitName: "甲", priority: 2, woundLabel: "受伤" }],
-  });
-  assert.equal(chosen.targetId, "u1");
-  assert.equal(chosen.priority, 2);
-  assert.match(chosen.reason, /优先级 2/);
-  assert.equal(selectHealingInterrupt({ healingCommands: [], triggers: [{ unitId: "u1" }] }), null);
-  assert.equal(selectHealingInterrupt({ healingCommands: [{ id: "h1" }], triggers: [] }), null);
 });
 
 test("装备槽位与双手冲突", () => {

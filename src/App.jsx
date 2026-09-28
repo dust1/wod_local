@@ -183,6 +183,9 @@ export function App() {
         await request(`/api/heroes/${activeHero.id}/inventory/${item.instanceId}/to-team`, { method: "POST" });
       } else if (action === "hero") {
         await request(`/api/team-inventory/${item.instanceId}/to-hero/${activeHero.id}`, { method: "POST" });
+      } else if (action === "sell") {
+        await request(`/api/heroes/${activeHero.id}/inventory/${item.instanceId}/sell`, { method: "POST" });
+        heroes.reload();
       }
       heroInventory.reload();
       heroEquipment.reload();

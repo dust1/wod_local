@@ -458,6 +458,29 @@ export function createRepository(db) {
       } catch (error) { db.exec("ROLLBACK"); throw error; }
     },
 
+    sellHeroInventoryItem(heroId, userId, instanceId) {
+      if (!this.getHero(heroId, userId)) throw new Error("英雄不存在");
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const item = db.prepare(`SELECT i.name FROM hero_inventory hi
+          JOIN item_instances ii ON ii.id=hi.item_instance_id JOIN items i ON i.id=ii.item_id
+          WHERE hi.hero_id=? AND hi.item_instance_id=?
+          AND hi.is_equipped=0 AND NOT EXISTS (
+            SELECT 1 FROM hero_equipment he WHERE he.hero_id=hi.hero_id AND he.item_instance_id=hi.item_instance_id
+          )`).get(Number(heroId), Number(instanceId));
+        if (!item) throw new Error("物品不在该角色仓库或仍处于装备状态");
+        db.prepare("DELETE FROM hero_inventory WHERE hero_id=? AND item_instance_id=?")
+          .run(Number(heroId), Number(instanceId));
+        const removed = db.prepare("DELETE FROM item_instances WHERE id=?").run(Number(instanceId));
+        if (Number(removed.changes) !== 1) throw new Error("物品实例删除失败");
+        db.prepare("UPDATE heroes SET gold=gold+1 WHERE id=? AND user_id=?")
+          .run(Number(heroId), Number(userId));
+        const gold = Number(db.prepare("SELECT gold FROM heroes WHERE id=?").get(Number(heroId)).gold);
+        db.exec("COMMIT");
+        return { instanceId: Number(instanceId), name: item.name, price: 1, gold };
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+    },
+
     listHeroInventory(heroId, userId) {
       if (!this.getHero(heroId, userId)) return null;
       // hero_equipment 是槽位分配的权威来源。历史导入可能只留下 hero_inventory.is_equipped，

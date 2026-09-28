@@ -23,7 +23,7 @@ import { selectTargets } from "../targeting/select.mjs";
 import { CommandCursor, FAILURE_REASON_LABELS, defaultFailureCostPolicy, interpretMainCommands } from "../commands/cursor.mjs";
 import { WAIT_COMMAND_SKILL_ID } from "../commands/battle-plan.mjs";
 import { createBattlePlan, resolveFloorPlan } from "../commands/battle-plan.mjs";
-import { collectHealingTriggers, selectHealingInterrupt, defaultWoundThresholdPolicy, defaultHealingPriorityPolicy, assessWounds, WOUND_LABELS } from "../commands/healing.mjs";
+import { defaultWoundThresholdPolicy, assessWounds, WOUND_LABELS } from "../commands/healing.mjs";
 import { createReplayEnvelope, hashInputSnapshot } from "../replay/envelope.mjs";
 import { DEFAULT_ROUNDING_POLICY } from "../formulas/calculation.mjs";
 import { meleePositionHitPercent, isMeleeAttackType } from "../domain/positions.mjs";
@@ -31,7 +31,7 @@ import { resolveModifier } from "../modifiers/pipeline.mjs";
 import { resolveMaxTargets } from "../domain/skill.mjs";
 import { canUseItem } from "../domain/item.mjs";
 
-export const RULESET_VERSION = "wod-complete-rules-v3";
+export const RULESET_VERSION = "wod-complete-rules-v4";
 export const RANDOM_ALGORITHM_VERSION = "mulberry32-fnv1a-wod-dice-v2";
 export const DEFAULT_MAX_ROUNDS = 30;
 
@@ -126,7 +126,6 @@ export function simulateBattle(input) {
   const tieBreakPolicy = policies.tieBreakPolicy ?? DEFAULT_TIE_BREAK_POLICY;
   const failureCostPolicy = policies.failureCostPolicy ?? defaultFailureCostPolicy;
   const woundThresholdPolicy = policies.woundThresholdPolicy ?? defaultWoundThresholdPolicy;
-  const healingPriorityPolicy = policies.healingPriorityPolicy ?? defaultHealingPriorityPolicy;
   const hitGradePercents = policies.hitGradePercents ?? zeroHitGradePercents;
   const armorPolicy = policies.armorPolicy ?? zeroReductionPolicy;
   const resistancePolicy = policies.resistancePolicy ?? zeroReductionPolicy;
@@ -170,7 +169,6 @@ export function simulateBattle(input) {
     tieBreak: tieBreakPolicy,
     failureCost: failureCostPolicy,
     woundThreshold: woundThresholdPolicy,
-    healingPriority: healingPriorityPolicy,
     evade: evadePolicy,
     armor: armorPolicy,
     resistance: resistancePolicy,
@@ -757,24 +755,40 @@ export function simulateBattle(input) {
   function tryHealingInterrupt(actor, actionSchedule = null) {
     const floorPlan = floorPlanFor(actor);
     if (!floorPlan) return false;
-    const healingCommands = floorPlan.mainRound.filter((command) => skills.get(command.skillId)?.baseType === "heal");
-    if (healingCommands.length === 0) return false;
-    const triggers = collectHealingTriggers({
-      units: units.map((unit) => ({ ...unit, healthMax: derivedOf(unit).healthMax })),
-      actorId: actor.id,
-      woundThresholdPolicy,
-      priorityPolicy: healingPriorityPolicy,
-    });
-    const chosen = selectHealingInterrupt({ healingCommands, triggers });
-    if (!chosen) return false;
-    const skill = skills.get(chosen.command.skillId);
-    // 付不起法力的治疗与普通指令一样属于空操作：不产生事件、不消耗本次行动，
-    // 交回常规指令流程继续顺位寻找可以执行的技能。
-    const healingCost = manaCostFor(actor, skill);
-    if (healingCost && actor.mana < healingCost.applied) return false;
-    emit("TargetSelected", { actorId: actor.id, actorName: actor.name, targetId: chosen.targetId, targetName: chosen.trigger.unitName, reason: "healingInterrupt", note: chosen.reason });
-    performSkill(actor, skill, { ...chosen.command, target: { mode: "single", position: null, forcedTargetId: chosen.targetId } }, { phase: "MainActionsExecuted", actionSchedule });
-    return true;
+    for (const wound of ["severe", "wounded", "light"]) {
+      const threshold = woundThresholdPolicy.thresholds[wound];
+      for (const command of floorPlan.healing?.[wound] ?? []) {
+        const skill = skills.get(command.skillId);
+        if (skill?.baseType !== "heal") continue;
+        const skillLevel = effectiveSkillLevelOf(actor, skill.id, { effectLedger: ledger, skill });
+        if (skillLevel <= 0) continue;
+        const mode = skill.target?.mode ?? "single";
+        const eligible = units.map((unit, index) => ({ unit, index, ratio: unit.health / derivedOf(unit).healthMax }))
+          .filter(({ unit, ratio }) => unit.alive && unit.present && unit.side === actor.side
+            && (skill.target?.allowSummons !== false || unit.kind !== "summon")
+            && (mode !== "self" || unit.id === actor.id)
+            && ratio <= threshold);
+        if (eligible.length === 0) continue;
+        eligible.sort((left, right) => left.ratio - right.ratio || left.index - right.index);
+        const anchor = eligible[0].unit;
+        const maxTargets = resolveMaxTargets(skill.target, { heroLevel: actor.level, skillLevel });
+        const targetPool = units.filter((unit) => unit.alive && unit.present && unit.side === actor.side
+          && (skill.target?.allowSummons !== false || unit.kind !== "summon"));
+        const targets = mode === "self" || mode === "single" ? [anchor]
+          : mode === "samePositionAoE" ? targetPool.filter((unit) => unit.position === anchor.position)
+            .sort((left, right) => left.health / derivedOf(left).healthMax - right.health / derivedOf(right).healthMax
+              || units.indexOf(left) - units.indexOf(right)).slice(0, maxTargets)
+            : targetPool.sort((left, right) => left.health / derivedOf(left).healthMax - right.health / derivedOf(right).healthMax
+              || units.indexOf(left) - units.indexOf(right)).slice(0, maxTargets);
+        if (targets.length === 0) continue;
+        const cost = manaCostFor(actor, skill);
+        if ((cost && actor.mana < cost.applied) || availableCalledItems(actor, command) === null) continue;
+        const outcome = performSkill(actor, skill, command, { phase: "MainActionsExecuted", actionSchedule,
+          selection: { targets, mode, position: anchor.position, truncated: false, priority: [] } });
+        if (outcome.ok) return true;
+      }
+    }
+    return false;
   }
 
   /** 技能在当前状态下的法力开销（含实时技能等级）；不需要法力的技能返回 null。 */
@@ -822,7 +836,7 @@ export function simulateBattle(input) {
    */
   function performSkill(actor, skill, command, context) {
     const skillLevel = effectiveSkillLevelOf(actor, skill.id, { effectLedger: ledger, skill });
-    const selection = resolveTargets(actor, skill, command);
+    const selection = context.selection ?? resolveTargets(actor, skill, command);
     const components = [...(skill.effects ?? []), ...(command.itemEffects ?? []), ...(command.setEffects ?? [])];
     const snapshotModifierValue = (modifier) => {
       try {
@@ -1086,14 +1100,24 @@ export function simulateBattle(input) {
   function performHeal(actor, skill, command, derived, selection = resolveTargets(actor, skill, command)) {
     const means = skillMeans(actor, skill, { effectLedger: ledger, derived, roundingPolicy });
     const base = means.damageMean ? means.damageMean.exact : means.attackMean?.exact ?? 0;
+    const recoveryTerms = (skill.healthRecovery ?? []).map((term) => ({
+      kind: term.kind === "percent" || term.kind === "scaledPercent" ? "percent" : "flat",
+      value: term.kind === "scaledPercent"
+        ? Number(term.ratio ?? 0) * means.skillLevel
+        : resolveModifier(term, { heroLevel: actor.level, skillLevel: means.skillLevel }),
+    }));
     for (const target of selection.targets) {
       emit("TargetSelected", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, mode: selection.mode, position: target.position });
       const targetDerived = derivedOf(target);
       const rolled = rollPolicy.rollAroundMean(base, { purpose: "heal", randomStream: stream });
-      const amount = Math.floor(applySkillEffectBonus(rolled, skillEffectBonusTermsOf(actor, skill, ledger)).value);
+      const amount = Math.floor(applySkillEffectBonus(
+        applySkillEffectBonus(rolled, recoveryTerms).value,
+        skillEffectBonusTermsOf(actor, skill, ledger),
+      ).value);
+      const before = target.health;
       target.health = Math.min(targetDerived.healthMax, target.health + amount);
       rememberResourceOffsets(target, targetDerived);
-      emit("HealingApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, amount, healthAfter: target.health, trace: { base, applied: amount } });
+      emit("HealingApplied", { actorId: actor.id, actorName: actor.name, targetId: target.id, targetName: target.name, amount: target.health - before, healthAfter: target.health, trace: { base, applied: amount } });
       applySkillEffects(actor, skill, target, command, { hit: true, dealDamage: false });
     }
     return { ok: true, reason: null };
